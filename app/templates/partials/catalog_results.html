@@ -1,0 +1,124 @@
+{% set total_pages = page_data.pages %}
+<div class="product-grid">
+  {% for product in page_data.items %}
+    {% set product_colors = product.colors_json|choices %}
+    {% set product_sizes = product.sizes_json|choices %}
+    <article class="card product-card {% if not product.active or not product.manual_active %}inactive{% endif %}" id="card-{{ product.ref }}" data-ref="{{ product.ref }}" data-season="{{ product.season }}">
+      <button class="img-box" type="button" data-product-open data-panel-url="/catalogo/produto/{{ product.ref }}?panel=1">
+        {% if product.image_path %}
+          <img class="prod-img" src="/media/{{ product.image_path }}" alt="{{ product.name }}">
+        {% else %}
+          <div class="no-img">
+            <div class="no-img-ico">&#129510;</div>
+            <span>Sem imagem</span>
+          </div>
+        {% endif %}
+        <div class="img-ov"><span>Ver</span></div>
+        {% if not product.active or not product.manual_active %}
+          <div class="inactive-flag">Inativo</div>
+        {% endif %}
+      </button>
+
+      <div class="body">
+        <div class="card-top">
+          <div class="ref">REF. {{ product.ref }}</div>
+          {% if can_manage_products %}
+            <details class="mini-menu">
+              <summary class="mini-trigger">⋮</summary>
+              <div class="mini-panel">
+                <a href="/admin/produtos?edit={{ product.ref }}">Editar</a>
+                <form action="/admin/produtos/{{ product.ref }}/toggle" method="post" class="mini-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                  <button type="submit">{{ 'Desativar' if product.active else 'Ativar' }}</button>
+                </form>
+              </div>
+            </details>
+          {% endif %}
+        </div>
+        <div class="nm">{{ product.name }}</div>
+        <div class="tp">{{ product.product_type }}</div>
+        <div class="pr-row">
+          <span class="pr">{{ product.price|money }}</span>
+          {% if product.pvp %}
+            <span class="pvp">PVP {{ product.pvp|money }}</span>
+          {% endif %}
+        </div>
+        <div class="summary-lines">
+          <span><b>Cores:</b> {{ product_colors|join(', ') if product_colors else '-' }}</span>
+          <span><b>Tam.:</b> {{ product_sizes|join(', ') if product_sizes else 'Único' }}</span>
+        </div>
+        {% if can_manage_products %}
+          <div class="meta">
+            <span><b>Categoria:</b> {{ product.category.label if product.category else product.category_slug or 'Sem categoria' }}</span>
+            <span><b>Estação:</b> {{ product.season }}</span>
+            <span><b>Step:</b> {{ product.quantity_step }}</span>
+          </div>
+        {% endif %}
+        <form class="product-card-form" data-cart-add-form data-product-ref="{{ product.ref }}">
+          <input type="hidden" name="ref" value="{{ product.ref }}">
+          <input type="hidden" name="cart_revision" value="{{ cart_summary.revision if cart_summary else 0 }}">
+          <input type="hidden" name="idempotency_key" value="">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or "" }}">
+          <div class="frow">
+            <div class="fg">
+              <label class="flbl">Cor</label>
+              {% if product_colors %}
+                <select name="color">
+                  {% for color in product_colors %}
+                    <option value="{{ color }}">{{ color }}</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <input type="text" value="-" disabled>
+                <input type="hidden" name="color" value="">
+              {% endif %}
+            </div>
+            <div class="fg">
+              <label class="flbl">Tamanho</label>
+              {% if product_sizes %}
+                <select name="size">
+                  {% for size in product_sizes %}
+                    <option value="{{ size }}">{{ size }}</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <input type="text" value="-" disabled>
+                <input type="hidden" name="size" value="">
+              {% endif %}
+            </div>
+          </div>
+          <div class="qrow">
+            <button class="qbtn" type="button" data-qty-dec>&#8722;</button>
+            <input
+              type="number"
+              name="quantity"
+              class="qinp"
+              value="{{ product.quantity_step }}"
+              min="{{ product.quantity_step }}"
+              step="{{ product.quantity_step }}"
+              data-quantity-input
+              data-quantity-step="{{ product.quantity_step }}"
+            >
+            <button class="qbtn" type="button" data-qty-inc>+</button>
+            <button class="abtn" type="submit">Adicionar</button>
+          </div>
+        </form>
+      </div>
+    </article>
+  {% else %}
+    <div class="empty-state">Não foram encontrados produtos para os filtros atuais.</div>
+  {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+  <nav class="pagination">
+    {% set prev_page = page_data.page - 1 %}
+    {% set next_page = page_data.page + 1 %}
+    {% if prev_page >= 1 %}
+      <a class="btn btn-secondary" href="?q={{ query.q|urlencode }}&ref={{ query.ref|urlencode }}&category={{ query.category|urlencode }}&season={{ query.season|urlencode }}&show_inactive={{ query.show_inactive|urlencode }}&page={{ prev_page }}">Anterior</a>
+    {% endif %}
+    {% if next_page <= total_pages %}
+      <a class="btn btn-secondary" href="?q={{ query.q|urlencode }}&ref={{ query.ref|urlencode }}&category={{ query.category|urlencode }}&season={{ query.season|urlencode }}&show_inactive={{ query.show_inactive|urlencode }}&page={{ next_page }}">Seguinte</a>
+    {% endif %}
+  </nav>
+{% endif %}

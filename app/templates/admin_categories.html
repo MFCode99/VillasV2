@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>Categorias</h1>
+      <p>Gestão de coleções e visibilidade dos grupos de catálogo.</p>
+    </div>
+    <div class="actions wrap">
+      <a class="btn btn-secondary" href="/admin">Painel</a>
+      <a class="btn btn-secondary" href="/admin/clientes">Clientes</a>
+      <a class="btn btn-secondary" href="/admin/produtos">Produtos</a>
+    </div>
+  </div>
+
+  <div class="grid admin-grid">
+    <div class="panel">
+      <h2>Nova categoria</h2>
+      <form action="/admin/categorias" method="post" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <label>Slug
+          <input type="text" name="slug" placeholder="Ex.: Soquetes" required>
+        </label>
+        <label>Etiqueta
+          <input type="text" name="label" placeholder="Ex.: Soquetes" required>
+        </label>
+        <div class="grid compact">
+          <label>Ordem
+            <input type="number" name="sort_order" value="0">
+          </label>
+          <label class="checkbox-row"><input type="checkbox" name="active" checked> Ativa</label>
+        </div>
+        <button class="btn" type="submit">Guardar categoria</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Lista de categorias</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Slug</th>
+              <th>Etiqueta</th>
+              <th>Ordem</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for category in categories %}
+              <tr class="{% if not category.active %}muted-row{% endif %}">
+                <td>{{ category.slug }}</td>
+                <td>{{ category.label }}</td>
+                <td>{{ category.sort_order }}</td>
+                <td>{{ 'ativa' if category.active else 'inativa' }}</td>
+                <td>
+                  <form action="/admin/categorias/{{ category.slug }}/toggle" method="post" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                    <button class="btn btn-secondary" type="submit">{{ 'Desativar' if category.active else 'Ativar' }}</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5">Ainda não existem categorias no V2.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

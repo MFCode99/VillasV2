@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block content %}
+{% set ns = namespace(active_label='Todas as categorias') %}
+{% for category in categories %}
+  {% if query.category == category.slug %}
+    {% set ns.active_label = category.label %}
+  {% endif %}
+{% endfor %}
+<section class="catalog-shell" data-catalog-view="{{ query.view or 'grid' }}">
+  <form class="srch-wrap" method="get" action="/catalogo">
+    <div class="srch-inner">
+      <span class="srch-ico">&#128269;</span>
+      <input class="srch-inp" id="srch" data-search-input type="text" name="q" value="{{ query.q }}" placeholder="Pesquisar referência, nome, cor, tipo..." autocomplete="off">
+      <button class="srch-x" id="srch-x" data-search-clear type="button" aria-label="Limpar pesquisa">&#10005;</button>
+      <input type="hidden" name="ref" value="{{ query.ref }}">
+      <input type="hidden" name="season" value="{{ query.season }}">
+      <input type="hidden" name="show_inactive" value="{{ query.show_inactive }}">
+      <input type="hidden" name="category" value="{{ query.category }}">
+      <input type="hidden" name="sort" value="{{ query.sort }}">
+      <input type="hidden" name="view" value="{{ query.view }}">
+    </div>
+  </form>
+
+  <nav class="tabs" id="tabs" aria-label="Categorias">
+    <a class="tab {% if not query.category %}on{% endif %}" href="/catalogo?q={{ query.q|urlencode }}&ref={{ query.ref|urlencode }}&season={{ query.season|urlencode }}&show_inactive={{ query.show_inactive|urlencode }}&sort={{ query.sort|urlencode }}&view={{ query.view|urlencode }}">Todas</a>
+    {% for category in categories %}
+      <a class="tab {% if query.category == category.slug %}on{% endif %}" href="/catalogo?q={{ query.q|urlencode }}&ref={{ query.ref|urlencode }}&category={{ category.slug|urlencode }}&season={{ query.season|urlencode }}&show_inactive={{ query.show_inactive|urlencode }}&sort={{ query.sort|urlencode }}&view={{ query.view|urlencode }}">{{ category.label }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="catalog-toolbar">
+    <div class="catalog-head">
+      <div>
+        <h1>{{ ns.active_label }}</h1>
+        <p class="catalog-sub">{{ page_data.total }} referências</p>
+      </div>
+    </div>
+
+    <div class="catalog-toolbar-actions">
+      <form class="catalog-sort-form" method="get" action="/catalogo">
+        <input type="hidden" name="q" value="{{ query.q }}">
+        <input type="hidden" name="ref" value="{{ query.ref }}">
+        <input type="hidden" name="category" value="{{ query.category }}">
+        <input type="hidden" name="season" value="{{ query.season }}">
+        <input type="hidden" name="show_inactive" value="{{ query.show_inactive }}">
+        <input type="hidden" name="view" value="{{ query.view }}">
+        <label class="sort-label">
+          <span class="sr-only">Ordenar</span>
+          <select name="sort" onchange="this.form.submit()">
+            <option value="ref_asc" {% if query.sort == 'ref_asc' %}selected{% endif %}>Ordenar: Referência (A–Z)</option>
+            <option value="ref_desc" {% if query.sort == 'ref_desc' %}selected{% endif %}>Ordenar: Referência (Z–A)</option>
+            <option value="name_asc" {% if query.sort == 'name_asc' %}selected{% endif %}>Ordenar: Nome (A–Z)</option>
+            <option value="price_asc" {% if query.sort == 'price_asc' %}selected{% endif %}>Ordenar: Preço (baixo)</option>
+            <option value="price_desc" {% if query.sort == 'price_desc' %}selected{% endif %}>Ordenar: Preço (alto)</option>
+          </select>
+        </label>
+      </form>
+
+      <div class="view-toggle" aria-label="Modo de visualização">
+        <a class="view-btn {% if query.view != 'list' %}on{% endif %}" href="/catalogo?q={{ query.q|urlencode }}&ref={{ query.ref|urlencode }}&category={{ query.category|urlencode }}&season={{ query.season|urlencode }}&show_inactive={{ query.show_inactive|urlencode }}&sort={{ query.sort|urlencode }}&view=grid" aria-label="Vista em grelha">&#9638;</a>
+        <a class="view-btn {% if query.view == 'list' %}on{% endif %}" href="/catalogo?q={{ query.q|urlencode }}&ref={{ query.ref|urlencode }}&category={{ query.category|urlencode }}&season={{ query.season|urlencode }}&show_inactive={{ query.show_inactive|urlencode }}&sort={{ query.sort|urlencode }}&view=list" aria-label="Vista em lista">&#8801;</a>
+      </div>
+
+      <details class="catalog-filters">
+        <summary>Filtros</summary>
+        <form class="catalog-filter-panel" method="get" action="/catalogo">
+          <input type="hidden" name="q" value="{{ query.q }}">
+          <input type="hidden" name="ref" value="{{ query.ref }}">
+          <input type="hidden" name="category" value="{{ query.category }}">
+          <input type="hidden" name="sort" value="{{ query.sort }}">
+          <input type="hidden" name="view" value="{{ query.view }}">
+          <label>
+            <span>Estação</span>
+            <select name="season">
+              <option value="" {% if not query.season %}selected{% endif %}>Todas</option>
+              <option value="ambos" {% if query.season == 'ambos' %}selected{% endif %}>Ambos</option>
+              <option value="inverno" {% if query.season == 'inverno' %}selected{% endif %}>Inverno</option>
+              <option value="verao" {% if query.season == 'verao' %}selected{% endif %}>Verão</option>
+            </select>
+          </label>
+          {% if include_inactive %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="show_inactive" value="1" {% if query.show_inactive %}checked{% endif %}>
+            <span>Mostrar inativos</span>
+          </label>
+          {% endif %}
+          <button class="btn btn-secondary" type="submit">Aplicar</button>
+        </form>
+      </details>
+    </div>
+  </div>
+
+  <div id="catalog-results">
+    {% include 'partials/catalog_results.html' %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card stack">
+  <div class="page-heading">
+    <div>
+      <h1>Nova encomenda</h1>
+      <p>Fluxo administrativo server-side. A encomenda pertence ao cliente selecionado e nunca toca no carrinho dele.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin/encomendas">Voltar</a>
+      <a class="btn btn-secondary" href="/admin/clientes">Clientes</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel stack">
+      <h2>Cliente selecionado</h2>
+      {% if draft.customer_user_id %}
+        <p><strong>{{ draft.customer_name }}</strong></p>
+        <p>{{ draft.customer_company or '-' }}</p>
+        <p>{{ draft.customer_email or '-' }}</p>
+        <p>NIF: {{ draft.customer_nif or '-' }}</p>
+      {% else %}
+        <p class="empty-state">Ainda não foi selecionado nenhum cliente.</p>
+      {% endif %}
+      <form action="/admin/encomendas/nova/cliente" method="post" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <label>Selecionar cliente
+          <select name="customer_id" required>
+            <option value="">Escolher...</option>
+            {% for customer in customers %}
+              <option value="{{ customer.id }}">{{ customer.full_name }}{% if customer.company_name %} · {{ customer.company_name }}{% endif %}{% if customer.nif %} · {{ customer.nif }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="btn" type="submit">Definir cliente</button>
+      </form>
+    </div>
+
+    <div class="panel stack">
+      <h2>Notas</h2>
+      <form action="/admin/encomendas/nova/notas" method="post" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <label>Notas
+          <textarea name="notes" rows="5">{{ draft.notes or '' }}</textarea>
+        </label>
+        <button class="btn btn-secondary" type="submit">Guardar notas</button>
+      </form>
+      <form action="/admin/encomendas/nova/criar" method="post" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <div class="actions wrap">
+          <button class="btn" type="submit">Criar encomenda</button>
+          <button class="btn btn-secondary" type="submit" formaction="/admin/encomendas/nova/limpar">Limpar draft</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel stack">
+      <h2>Adicionar produto</h2>
+      <form method="get" class="inline-form">
+        <input type="search" name="product_q" value="{{ product_q }}" placeholder="Referência ou nome">
+        <button class="btn btn-secondary" type="submit">Pesquisar</button>
+      </form>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Ref</th><th>Nome</th><th>Step</th><th>Ação</th></tr></thead>
+          <tbody>
+            {% for product in products.items %}
+              <tr>
+                <td>{{ product.ref }}</td>
+                <td>{{ product.name }}</td>
+                <td>{{ product.quantity_step }}</td>
+                <td>
+                  <form action="/admin/encomendas/nova/linhas" method="post" class="stack">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                    <input type="hidden" name="ref" value="{{ product.ref }}">
+                    <div class="grid compact">
+                      <label>Cor
+                        <select name="color">
+                          <option value="">-</option>
+                          {% for color in product.colors_json|choices %}
+                            <option value="{{ color }}">{{ color }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <label>Tamanho
+                        <select name="size">
+                          <option value="">-</option>
+                          {% for size in product.sizes_json|choices %}
+                            <option value="{{ size }}">{{ size }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <label>Qtd.
+                        <input type="number" name="quantity" value="{{ product.quantity_step }}" min="1" step="{{ product.quantity_step }}">
+                      </label>
+                    </div>
+                    <button class="btn btn-secondary" type="submit">Adicionar</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4">Sem produtos para esta pesquisa.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel stack">
+      <h2>Draft atual</h2>
+      <p>Linhas: <strong>{{ draft.lines_count }}</strong></p>
+      <p>Unidades: <strong>{{ draft.units }}</strong></p>
+      <p>Total: <strong>{{ draft.subtotal|money }}</strong></p>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Produto</th><th>Variante</th><th>Qtd.</th><th>Total</th><th></th></tr></thead>
+          <tbody>
+            {% for line in draft.lines %}
+              <tr>
+                <td>{{ line.product_ref }}<br><span class="muted">{{ line.product_name }}</span></td>
+                <td>{{ line.color or '-' }} / {{ line.size or '-' }}</td>
+                <td>{{ line.quantity }}</td>
+                <td>{{ line.line_total|money }}</td>
+                <td>
+                  <form action="/admin/encomendas/nova/linhas/{{ line.line_id }}/remover" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                    <button class="btn btn-secondary" type="submit">Remover</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5">Ainda não existem linhas no draft.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

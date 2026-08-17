@@ -1,0 +1,22 @@
+[Unit]
+Description=Villas V2 FastAPI service
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nunogouveia
+Group=nunogouveia
+WorkingDirectory=/home/nunogouveia/villas-v2
+EnvironmentFile=/home/nunogouveia/villas-v2/.env
+ExecStart=/home/nunogouveia/villas-v2/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=false
+ProtectSystem=full
+ReadWritePaths=/home/nunogouveia/villas-v2/media /home/nunogouveia/villas-v2/logs /home/nunogouveia/villas-v2/backups
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>Encomenda {{ order.publicNumber }}</h1>
+      <p>Estado {{ order.orderStatusLabel }} · Email {{ order.emailStatus }}</p>
+    </div>
+    <div class="actions wrap">
+      <a class="btn btn-secondary" href="{{ order.pdfUrl }}">PDF</a>
+      <a class="btn btn-secondary" href="{{ order.pdfNoPricesUrl }}">PDF sem preços</a>
+      <a class="btn btn-secondary" href="{% if admin_view %}/admin/encomendas{% else %}/me/encomendas{% endif %}">Voltar</a>
+    </div>
+  </div>
+
+  {% if admin_view %}
+    <div class="panel stack">
+      <h2>Estado da encomenda</h2>
+      <p>Origem: <strong>{{ order.origin }}</strong></p>
+      <p>Criada por: <strong>{{ order.createdByUsername or '-' }}</strong></p>
+      <p>Confirmada em: <strong>{{ order.confirmedAt|datetime_pt if order.confirmedAt else 'n/a' }}</strong></p>
+      <div class="actions wrap">
+        {% if order.orderStatus == 'pending' %}
+          <form action="/admin/encomendas/{{ order.publicNumber }}/status" method="post" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+            <input type="hidden" name="new_status" value="confirmed">
+            <button class="btn" type="submit">Confirmar</button>
+          </form>
+        {% endif %}
+        {% if order.orderStatus == 'confirmed' %}
+          <form action="/admin/encomendas/{{ order.publicNumber }}/status" method="post" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+            <input type="hidden" name="new_status" value="shipped">
+            <button class="btn" type="submit">Marcar como enviada</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid">
+    <div class="panel stack">
+      <h2>Resumo</h2>
+      <p>Número público: <strong>{{ order.publicNumber }}</strong></p>
+      <p>Pedido interno: <strong>{{ order.id }}</strong></p>
+      <p>Request ID: <strong>{{ order.requestId }}</strong></p>
+      <p>Estado: <strong>{{ order.orderStatusLabel }}</strong></p>
+      <p>Email: <strong>{{ order.emailStatus }}</strong></p>
+      <p>Subtotal: <strong>{{ order.subtotal|money }}</strong></p>
+      <p>Total: <strong>{{ order.total|money }}</strong></p>
+      <p>Linhas: <strong>{{ order.lines }}</strong></p>
+      <p>Unidades: <strong>{{ order.units }}</strong></p>
+      <p>Notas: {{ order.notes or '-' }}</p>
+    </div>
+
+    <div class="panel stack">
+      <h2>Cliente</h2>
+      <p><strong>{{ order.customerName }}</strong></p>
+      <p>{{ order.customerEmail or '-' }}</p>
+      <p>{{ order.customerPhone or '-' }}</p>
+      <p>{{ order.customerCompany or '-' }}</p>
+      <p>{{ order.customerAddressLine1 or '-' }}</p>
+      <p>{{ order.customerAddressLine2 or '-' }}</p>
+      <p>{{ order.customerPostalCode or '-' }} {{ order.customerCity or '' }}</p>
+      <p>{{ order.customerCountry or '-' }}</p>
+    </div>
+  </div>
+
+  <div class="panel stack">
+    <h2>Linhas</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Produto</th>
+            <th>Cor</th>
+            <th>Tamanho</th>
+            <th>Qtd.</th>
+            <th>P.unit</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in order['items'] %}
+            <tr>
+              <td>{{ item.ref }}</td>
+              <td>{{ item.name }}</td>
+              <td>{{ item.color or '-' }}</td>
+              <td>{{ item.size or '-' }}</td>
+              <td>{{ item.quantity }}</td>
+              <td>{{ item.unitPrice|money }}</td>
+              <td>{{ item.lineTotal|money }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel stack">
+      <h2>Histórico</h2>
+      {% for entry in history %}
+        <p><strong>{{ entry.newStatus }}</strong> · {{ entry.changedAt|datetime_pt }} · {{ entry.note or '-' }}</p>
+      {% else %}
+        <p>Sem histórico.</p>
+      {% endfor %}
+    </div>
+
+    <div class="panel stack">
+      <h2>Emails</h2>
+      {% for log in email_logs %}
+        <p><strong>{{ log.status }}</strong> · {{ log.createdAt|datetime_pt }} · {{ log.subject }}</p>
+      {% else %}
+        <p>Sem registos de email.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="user-profile-page stack">
+  {% if request.query_params.get('delete_blocked') %}<div class="alert alert-error">{% if request.query_params.get('delete_blocked') == 'self' %}Não podes eliminar a conta que estás a utilizar.{% else %}Este utilizador tem histórico associado. Desativa a conta para preservar os registos.{% endif %}</div>{% endif %}
+
+  <div class="page-heading users-heading">
+    <div class="profile-heading-main">
+      <span class="user-avatar user-avatar-large">{{ (customer.full_name or customer.username)[:1]|upper }}</span>
+      <div><span class="eyebrow">Utilizador</span><h1>{{ customer.full_name }}</h1><p>@{{ customer.username }} · {{ 'Cliente' if customer.role == 'client' else 'Administrador' if customer.role == 'admin' else 'Developer' }}</p></div>
+    </div>
+    <div class="actions"><a class="btn btn-secondary" href="/admin/clientes">← Utilizadores</a></div>
+  </div>
+
+  <div class="profile-summary-grid">
+    <div class="profile-summary-item"><span>Estado</span><strong class="profile-status"><i class="{% if customer.active %}is-on{% endif %}"></i>{{ 'Ativo' if customer.active else 'Inativo' }}</strong></div>
+    <div class="profile-summary-item"><span>Função</span><strong>{{ 'Cliente' if customer.role == 'client' else 'Administrador' if customer.role == 'admin' else 'Developer' }}</strong></div>
+    <div class="profile-summary-item"><span>Último login</span><strong>{{ customer.last_login_at|datetime_pt if customer.last_login_at else 'Nunca' }}</strong></div>
+    <div class="profile-summary-item"><span>Encomendas</span><strong>{{ orders|length }}</strong></div>
+  </div>
+
+  <div class="user-detail-grid">
+    <div class="stack">
+      <div class="panel profile-panel stack">
+        <div class="section-heading"><div><h2>Dados do utilizador</h2><p>Informação de contacto e faturação.</p></div></div>
+        <form action="/admin/clientes/{{ customer.id }}" method="post" class="profile-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+          <label class="profile-field-wide">Nome completo<input type="text" name="full_name" value="{{ customer.full_name }}" required></label>
+          <label>NIF<input type="text" name="nif" value="{{ customer.nif or '' }}"></label>
+          <label>Email<input type="email" name="email" value="{{ customer.email or '' }}"></label>
+          <label>Empresa<input type="text" name="company_name" value="{{ customer.company_name or '' }}"></label>
+          <label>Telefone<input type="text" name="phone" value="{{ customer.phone or '' }}"></label>
+          <label class="profile-field-wide">Morada<input type="text" name="address_line1" value="{{ customer.address_line1 or '' }}"></label>
+          <label class="profile-field-wide">Morada 2<input type="text" name="address_line2" value="{{ customer.address_line2 or '' }}"></label>
+          <label>Código postal<input type="text" name="postal_code" value="{{ customer.postal_code or '' }}"></label>
+          <label>Cidade<input type="text" name="city" value="{{ customer.city or '' }}"></label>
+          <label>País<input type="text" name="country" value="{{ customer.country or '' }}"></label>
+          <label>Função<select name="role"><option value="client" {% if customer.role == 'client' %}selected{% endif %}>Cliente</option><option value="admin" {% if customer.role == 'admin' %}selected{% endif %}>Administrador</option>{% if customer.role == 'developer' %}<option value="developer" selected>Developer legado</option>{% endif %}</select></label>
+          <label class="profile-field-wide">Notas internas<textarea name="admin_notes" placeholder="Observações visíveis apenas para administradores…">{{ customer.admin_notes or '' }}</textarea><small>Usa este espaço para preferências, contexto comercial ou lembretes.</small></label>
+          <label class="checkbox-row profile-field-wide"><input type="checkbox" name="active" {% if customer.active %}checked{% endif %}> Conta ativa</label>
+          <div class="profile-form-actions profile-field-wide"><button class="btn" type="submit">Guardar alterações</button></div>
+        </form>
+      </div>
+
+      <div class="panel profile-panel stack">
+        <div class="section-heading"><div><h2>Encomendas</h2><p>Histórico associado a este utilizador.</p></div></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Número</th><th>Estado</th><th>Total</th><th>Criada</th><th></th></tr></thead><tbody>
+          {% for order in orders %}<tr><td>{{ order.publicNumber }}</td><td>{{ order.orderStatusLabel }}</td><td>{{ order.total|money }}</td><td>{{ order.createdAt|datetime_pt }}</td><td><a class="btn btn-secondary" href="/admin/encomendas/{{ order.publicNumber }}">Ver</a></td></tr>
+          {% else %}<tr><td colspan="5">Este utilizador ainda não tem encomendas.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </div>
+    </div>
+
+    <aside class="stack profile-sidebar">
+      <div class="panel stack account-summary"><div class="section-heading"><div><h2>Conta</h2><p>Acesso e estado atual.</p></div></div><dl class="account-list"><div><dt>Username</dt><dd>{{ customer.username }}</dd></div><div><dt>Email</dt><dd>{{ customer.email or 'Em falta' }}</dd></div><div><dt>NIF</dt><dd>{{ customer.nif or 'Em falta' }}</dd></div></dl>
+        <form action="/admin/users/{{ customer.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}"><button class="btn btn-secondary" type="submit">{{ 'Desativar conta' if customer.active else 'Ativar conta' }}</button></form>
+      </div>
+      <div class="panel stack password-panel"><div class="section-heading"><div><h2>Nova password</h2><p>Substitui a password de acesso.</p></div></div><form action="/admin/users/{{ customer.id }}/password" method="post" class="stack" data-password-reset><input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}"><label>Nova password<span class="password-field"><input type="password" name="password" minlength="8" autocomplete="new-password" required data-password-input><button type="button" class="password-reveal" data-password-reveal>Mostrar</button></span></label><small class="muted">Mínimo de 8 caracteres.</small><button class="btn btn-secondary" type="submit">Definir password</button></form></div>
+      {% if warnings %}<div class="panel stack"><div class="section-heading"><div><h2>Avisos</h2></div></div>{% for warning in warnings %}<div class="profile-warning"><strong>{{ warning.title }}</strong><p>{{ warning.detail }}</p></div>{% endfor %}</div>{% endif %}
+      <div class="panel stack danger-panel"><div><h2>Eliminar utilizador</h2><p class="muted">Permanente e apenas disponível sem histórico comercial.</p></div><form action="/admin/users/{{ customer.id }}/delete" method="post" data-confirm="Eliminar permanentemente este utilizador?" data-confirm-title="Eliminar utilizador"><input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}"><button class="btn btn-danger" type="submit">Eliminar utilizador</button></form></div>
+    </aside>
+  </div>
+</section>
+{% endblock %}

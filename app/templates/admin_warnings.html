@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card stack">
+  <div class="page-heading">
+    <div>
+      <h1>Avisos</h1>
+      <p>Alertas comerciais suaves, persistidas no servidor.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin">Painel</a>
+      <a class="btn btn-secondary" href="/admin/clientes">Clientes</a>
+    </div>
+  </div>
+
+  <div class="panel stack">
+    <p>Total de avisos ativos: <strong>{{ warning_count }}</strong></p>
+    {% for warning in warnings %}
+      <div class="warning-card">
+        <div class="warning-row">
+          <div>
+            <strong>{{ warning.customer_name }}</strong>
+            <p>{{ warning.detail }}</p>
+            <p class="muted">{{ warning.customer_company or '-' }} · {{ warning.customer_email or '-' }} · {{ warning.customer_nif or '-' }}</p>
+          </div>
+          <div class="actions wrap">
+            <a class="btn btn-secondary" href="/admin/clientes/{{ warning.entity_id }}#{{ 'nif' if warning.warning_type == 'missing_nif' else 'email' }}">Corrigir</a>
+            <form action="/admin/avisos/{{ warning.key }}/ignore" method="post" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+              <button class="btn btn-secondary" type="submit">Ignorar permanentemente</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="empty-state">Sem avisos ativos.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

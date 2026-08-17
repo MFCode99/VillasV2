@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>Developer</h1>
+      <p>Visibilidade operacional, atividade de login e notas de runtime.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin">Área admin</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Resumo</h2>
+      <p>Total utilizadores: {{ stats.total_users }}</p>
+      <p>Clientes: {{ stats.total_clients }}</p>
+      <p>Admins: {{ stats.total_admins }}</p>
+      <p>Developers: {{ stats.total_developers }}</p>
+      <p>Sessões ativas: {{ stats.active_sessions }}</p>
+      <p>Tentativas de login (24h): {{ stats.recent_login_attempts }}</p>
+    </div>
+    <div class="panel">
+      <h2>Definições do site</h2>
+      <ul class="list">
+        {% for setting in site_settings %}
+          <li><strong>{{ setting.key }}</strong> = {{ setting.value }}</li>
+        {% else %}
+          <li>Sem definições guardadas.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Atividade de login</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Quando</th>
+              <th>Utilizador</th>
+              <th>Sucesso</th>
+              <th>Motivo</th>
+              <th>IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in login_logs %}
+              <tr>
+                <td>{{ row.created_at }}</td>
+                <td>{{ row.username_input }}</td>
+                <td>{{ 'sim' if row.success else 'não' }}</td>
+                <td>{{ row.failure_reason or 'ok' }}</td>
+                <td>{{ row.ip_address or 'n/a' }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5">Ainda não existe atividade de login.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Sessões</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Utilizador</th>
+              <th>Expira</th>
+              <th>Última atividade</th>
+              <th>Revogada</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in sessions %}
+              <tr>
+                <td>{{ row.user_id }}</td>
+                <td>{{ row.expires_at }}</td>
+                <td>{{ row.last_seen_at }}</td>
+                <td>{{ 'sim' if row.revoked_at else 'não' }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4">Ainda não existem sessões.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Notas de developer</h2>
+    <ul class="list">
+      {% for note in developer_notes %}
+        <li><strong>{{ note.title }}</strong> - {{ note.body }}</li>
+      {% else %}
+        <li>Sem notas guardadas.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endblock %}

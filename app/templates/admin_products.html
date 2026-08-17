@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>Produtos</h1>
+      <p>Gestão de catálogo, preços, estações, incrementos e imagem.</p>
+    </div>
+    <div class="actions wrap">
+      <a class="btn btn-secondary" href="/admin">Painel</a>
+      <a class="btn btn-secondary" href="/admin/clientes">Clientes</a>
+      <a class="btn btn-secondary" href="/admin/categorias">Categorias</a>
+    </div>
+  </div>
+
+  <div class="grid admin-grid">
+    <div class="panel">
+      <h2>{% if editing_product %}Editar produto{% else %}Novo produto{% endif %}</h2>
+      <form action="{% if editing_product %}/admin/produtos/{{ editing_product.ref }}{% else %}/admin/produtos{% endif %}" method="post" enctype="multipart/form-data" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <label>Referência
+          <input type="text" name="{% if editing_product %}new_ref{% else %}ref{% endif %}" value="{{ editing_product.ref if editing_product else '' }}" required>
+        </label>
+        <label>Nome
+          <input type="text" name="name" value="{{ editing_product.name if editing_product else '' }}" required>
+        </label>
+        <label>Tipo
+          <input type="text" name="product_type" value="{{ editing_product.product_type if editing_product else '' }}" required>
+        </label>
+        <label>Categoria
+          <select name="category_slug">
+            <option value="">Sem categoria</option>
+            {% for category in categories %}
+              <option value="{{ category.slug }}" {% if editing_product and editing_product.category_slug == category.slug %}selected{% endif %}>{{ category.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="grid compact">
+          <label>Preço
+            <input type="text" name="price" value="{{ editing_product.price if editing_product else '' }}" required>
+          </label>
+          <label>PVP
+            <input type="text" name="pvp" value="{{ editing_product.pvp if editing_product and editing_product.pvp is not none else '' }}">
+          </label>
+        </div>
+        <label>Cores (separadas por vírgula)
+          <input type="text" name="colors" value="{{ editing_product.colors_json|choices|join(', ') if editing_product and editing_product.colors_json else '' }}">
+        </label>
+        <label>Tamanhos (separados por vírgula)
+          <input type="text" name="sizes" value="{{ editing_product.sizes_json|choices|join(', ') if editing_product and editing_product.sizes_json else '' }}">
+        </label>
+        <div class="grid compact">
+          <label>Estação
+            <select name="season">
+              <option value="ambos" {% if not editing_product or editing_product.season == 'ambos' %}selected{% endif %}>Ambos</option>
+              <option value="inverno" {% if editing_product and editing_product.season == 'inverno' %}selected{% endif %}>Inverno</option>
+              <option value="verao" {% if editing_product and editing_product.season == 'verao' %}selected{% endif %}>Verão</option>
+            </select>
+          </label>
+          <label>Incremento
+            <input type="number" name="qtd_step" min="1" value="{{ editing_product.quantity_step if editing_product else 12 }}">
+          </label>
+        </div>
+        <div class="grid compact">
+          <label>Ordem
+            <input type="number" name="sort_order" value="{{ editing_product.sort_order if editing_product else 0 }}">
+          </label>
+          <label>Imagem
+            <input type="file" name="image_file" accept="image/*">
+          </label>
+        </div>
+        <label>Descrição
+          <textarea name="description" rows="4">{{ editing_product.description if editing_product and editing_product.description else '' }}</textarea>
+        </label>
+        <label class="checkbox-row"><input type="checkbox" name="active" {% if not editing_product or editing_product.active %}checked{% endif %}> Ativo</label>
+        <label class="checkbox-row"><input type="checkbox" name="manual_active" {% if not editing_product or editing_product.manual_active %}checked{% endif %}> Manualmente ativo</label>
+        <div class="actions">
+          <button class="btn" type="submit">{% if editing_product %}Guardar alterações{% else %}Criar produto{% endif %}</button>
+          {% if editing_product %}
+            <a class="btn btn-secondary" href="/admin/produtos">Cancelar</a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <div class="page-heading">
+        <div>
+          <h2>Lista de produtos</h2>
+          <p>{{ page_data.total }} produtos no catálogo.</p>
+        </div>
+      </div>
+      <form method="get" class="inline-form">
+        <input type="search" name="q" value="{{ query }}" placeholder="Pesquisar produtos">
+        <button class="btn btn-secondary" type="submit">Pesquisar</button>
+      </form>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>Nome</th>
+              <th>Categoria</th>
+              <th>Preço</th>
+              <th>Estação</th>
+              <th>Step</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in page_data.items %}
+              <tr class="{% if not product.active or not product.manual_active %}muted-row{% endif %}">
+                <td>{{ product.ref }}</td>
+                <td>{{ product.name }}</td>
+                <td>{{ product.category.label if product.category else product.category_slug or '-' }}</td>
+                <td>{{ product.price|money }}</td>
+                <td>{{ product.season }}</td>
+                <td>{{ product.quantity_step }}</td>
+                <td>{{ 'ativo' if product.active else 'inativo' }}</td>
+                <td>
+                  <div class="inline-form">
+                    <a class="btn btn-secondary" href="/admin/produtos?edit={{ product.ref }}">Editar</a>
+                    <form action="/admin/produtos/{{ product.ref }}/toggle" method="post" class="inline-form">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                      <button class="btn btn-secondary" type="submit">{{ 'Desativar' if product.active else 'Ativar' }}</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="8">Ainda não existem produtos no V2.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

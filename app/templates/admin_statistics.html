@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card stack">
+  <div class="page-heading">
+    <div>
+      <h1>Estatísticas</h1>
+      <p>Indicadores comerciais consolidados pelo servidor.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin">Painel</a>
+      <a class="btn btn-secondary" href="/admin/estatisticas/export.xlsx?year={{ query.year }}&month={{ query.month }}">Exportar Excel</a>
+    </div>
+  </div>
+
+  <form method="get" class="catalog-filters">
+    <div class="grid compact">
+      <label>Ano<input type="number" name="year" value="{{ query.year }}" min="2020"></label>
+      <label>Mês<input type="number" name="month" value="{{ query.month }}" min="1" max="12"></label>
+    </div>
+    <div class="actions">
+      <button class="btn" type="submit">Ver período</button>
+    </div>
+  </form>
+
+  <div class="grid compact">
+    <div class="panel"><h2>Pendentes</h2><p class="metric">{{ report.pending_orders }}</p></div>
+    <div class="panel"><h2>Confirmadas</h2><p class="metric">{{ report.confirmed_orders }}</p></div>
+    <div class="panel"><h2>Enviadas</h2><p class="metric">{{ report.shipped_orders }}</p></div>
+    <div class="panel"><h2>Receita</h2><p class="metric">{{ report.confirmed_revenue|money }}</p></div>
+  </div>
+
+  <div class="panel stack">
+    <h2>Evolução mensal</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Mês</th><th>Pendentes</th><th>Confirmadas</th><th>Enviadas</th><th>Receita</th><th>Unidades</th></tr></thead>
+        <tbody>
+          {% for row in monthly_series %}
+            <tr>
+              <td>{{ '%04d-%02d'|format(row.year, row.month) }}</td>
+              <td>{{ row.pending_orders }}</td>
+              <td>{{ row.confirmed_orders }}</td>
+              <td>{{ row.shipped_orders }}</td>
+              <td>{{ row.confirmed_revenue|money }}</td>
+              <td>{{ row.confirmed_units }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

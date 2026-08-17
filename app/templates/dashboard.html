@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>Painel</h1>
+      <p>Autenticado como <strong>{{ user.full_name }}</strong> ({{ user.role }}).</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/health">Saúde</a>
+      <a class="btn btn-secondary" href="/ready">Disponibilidade</a>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="panel">
+      <h2>Sessão</h2>
+      <p>Utilizador: {{ user.username }}</p>
+      <p>Função: {{ user.role }}</p>
+      <p>Ativo: {{ 'sim' if user.active else 'não' }}</p>
+      <p>Último login: {{ user.last_login_at or 'n/a' }}</p>
+    </div>
+    <div class="panel">
+      <h2>Atalhos</h2>
+      <p><a href="/">Início</a></p>
+      <p><a href="/admin">Área admin</a></p>
+      <p><a href="/developer">Área developer</a></p>
+    </div>
+  </div>
+</section>
+{% endblock %}

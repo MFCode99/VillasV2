@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card cart-page">
+  <div class="page-heading">
+    <div>
+      <h1>Encomenda</h1>
+      <p>Estado confirmado pelo servidor. Revisão {{ cart.revision }}</p>
+    </div>
+    <div class="actions">
+      <span class="badge">Linhas {{ cart.lines }}</span>
+      <span class="badge">Unidades {{ cart.units }}</span>
+      <span class="badge">Total {{ cart.total|money }}</span>
+    </div>
+  </div>
+
+  {% if cart.items %}
+    <div class="cart-list">
+      {% for item in cart.items %}
+        <article class="cart-line {% if not item.available %}is-muted{% endif %}">
+          <div class="cart-line-media">
+            {% if item.image_path %}
+              <img src="/media/{{ item.image_path }}" alt="{{ item.name }}">
+            {% else %}
+              <div class="product-placeholder">Sem imagem</div>
+            {% endif %}
+          </div>
+          <div class="cart-line-body">
+            <div class="cart-line-top">
+              <strong>{{ item.ref }}</strong>
+              <span class="season-chip">{{ item.quantity_step }}</span>
+            </div>
+            <h3>{{ item.name }}</h3>
+            <p class="muted">{{ item.type }}</p>
+            <div class="chip-row">
+              <span class="chip">Cor {{ item.color or '-' }}</span>
+              <span class="chip">Tamanho {{ item.size or '-' }}</span>
+              <span class="chip">Qtd. {{ item.quantity }}</span>
+            </div>
+            <div class="price-row">
+              <span class="main-price">{{ item.line_total|money }}</span>
+              <span class="pvp-price">{{ item.unit_price|money }} / un.</span>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+    <form class="card stack cart-submit-form" data-order-submit-form method="post" action="/me/orders">
+      <input type="hidden" name="idempotency_key" value="">
+      <input type="hidden" name="cart_revision" value="{{ cart.revision }}">
+      <label class="stack">
+        <span>Notas da encomenda</span>
+        <textarea name="notes" rows="3" placeholder="Instru??es, observa??es ou refer?ncia interna"></textarea>
+      </label>
+      <div class="actions">
+        <button class="btn" type="submit">Enviar encomenda</button>
+        <a class="btn btn-secondary" href="/me/encomendas">Ver encomendas</a>
+      </div>
+    </form>
+  {% else %}
+    <div class="empty-state">A encomenda está vazia.</div>
+  {% endif %}
+</section>
+{% endblock %}

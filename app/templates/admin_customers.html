@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="users-page stack" data-users-page>
+  <div class="page-heading users-heading">
+    <div><span class="eyebrow">Administração</span><h1>Utilizadores</h1><p>Clientes e administradores num único lugar.</p></div>
+    <button class="btn" type="button" data-user-modal-open>+ Novo utilizador</button>
+  </div>
+
+  <div class="user-overview-bar">
+  <div class="user-stats" aria-label="Resumo de utilizadores" data-user-stats>
+    <a href="/admin/clientes" class="user-stat {% if selected_role == 'all' %}is-active{% endif %}" data-user-role=""><span>Todos</span><strong>{{ counts.all }}</strong></a>
+    <a href="/admin/clientes?role=client" class="user-stat {% if selected_role == 'client' %}is-active{% endif %}" data-user-role="client"><span>Clientes</span><strong>{{ counts.client }}</strong></a>
+    <a href="/admin/clientes?role=admin" class="user-stat {% if selected_role == 'admin' %}is-active{% endif %}" data-user-role="admin"><span>Administradores</span><strong>{{ counts.admin }}</strong></a>
+  </div>
+  <form action="/admin/users/clients/toggle-all" method="post" class="bulk-client-status" data-bulk-client-toggle>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+    <input type="hidden" name="active" value="{{ 'false' if all_clients_active else 'true' }}">
+    <span><strong>Clientes ativos</strong><small>Controla todas as contas de cliente</small></span>
+    <button class="toggle-switch {% if all_clients_active %}is-on{% endif %}" type="submit" role="switch" aria-checked="{{ 'true' if all_clients_active else 'false' }}"><i></i></button>
+  </form>
+  </div>
+
+  <div class="users-panel">
+    <form method="get" class="user-filters" data-user-filters>
+      <div class="user-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ query }}" placeholder="Pesquisar por nome, username, empresa, email ou NIF" autocomplete="off" data-user-search></div>
+      <select name="role" aria-label="Filtrar por função" data-user-filter><option value="" {% if selected_role == 'all' %}selected{% endif %}>Todas as funções</option><option value="client" {% if selected_role == 'client' %}selected{% endif %}>Clientes</option><option value="admin" {% if selected_role == 'admin' %}selected{% endif %}>Administradores</option></select>
+      <select name="status" aria-label="Filtrar por estado" data-user-filter><option value="all" {% if selected_status == 'all' %}selected{% endif %}>Todos os estados</option><option value="active" {% if selected_status == 'active' %}selected{% endif %}>Ativos</option><option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>Inativos</option></select>
+      <span class="live-search-state" data-user-loading aria-live="polite"></span>
+    </form>
+    <div data-user-results>
+      <div class="user-list-head"><span>{{ customers|length }} resultado{% if customers|length != 1 %}s{% endif %}</span></div>
+      <div class="user-list">
+        {% for item in customers %}
+          <div class="user-row {% if not item.active %}is-inactive{% endif %}" data-user-row>
+            <a class="user-avatar" href="/admin/clientes/{{ item.id }}">{{ (item.full_name or item.username)[:1]|upper }}</a>
+            <a class="user-primary" href="/admin/clientes/{{ item.id }}"><strong>{{ item.full_name or item.username }}</strong><small>@{{ item.username }}{% if item.company_name %} · {{ item.company_name }}{% endif %}</small></a>
+            <a class="user-contact" href="/admin/clientes/{{ item.id }}"><strong>{{ item.email or 'Sem email' }}</strong><small>{{ item.nif or 'NIF em falta' }}{% if item.phone %} · {{ item.phone }}{% endif %}</small></a>
+            <span class="role-badge role-{{ item.role }}">{{ 'Cliente' if item.role == 'client' else 'Administrador' if item.role == 'admin' else 'Developer legado' }}</span>
+            <form action="/admin/users/{{ item.id }}/toggle" method="post" class="quick-status" data-user-toggle>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+              <button class="toggle-switch {% if item.active %}is-on{% endif %}" type="submit" role="switch" aria-checked="{{ 'true' if item.active else 'false' }}" aria-label="{{ 'Desativar' if item.active else 'Ativar' }} {{ item.full_name }}"><i></i></button>
+              <span>{{ 'Ativo' if item.active else 'Inativo' }}</span>
+            </form>
+            <a class="user-arrow" href="/admin/clientes/{{ item.id }}" aria-label="Abrir {{ item.full_name }}">›</a>
+          </div>
+        {% else %}<div class="empty-state">Não foram encontrados utilizadores com estes filtros.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="user-modal" data-user-modal hidden>
+    <button class="user-modal-backdrop" type="button" data-user-modal-close aria-label="Fechar"></button>
+    <div class="user-modal-card" role="dialog" aria-modal="true" aria-labelledby="new-user-title">
+      <div class="user-modal-head"><div><span class="eyebrow">Novo registo</span><h2 id="new-user-title">Criar utilizador</h2><p>Preenche os dados essenciais. Podes completar o perfil depois.</p></div><button class="user-modal-close" type="button" data-user-modal-close aria-label="Fechar">×</button></div>
+      <form action="/admin/users" method="post" class="user-create-form" data-user-create>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <label>Username<input type="text" name="username" autocomplete="off" required></label>
+        <label>Nome<input type="text" name="full_name" required></label>
+        <label>Password<input type="password" name="password" minlength="8" required></label>
+        <label>Função<select name="role"><option value="client">Cliente</option><option value="admin">Administrador</option></select></label>
+        <label>Email<input type="email" name="email"></label><label>NIF<input type="text" name="nif"></label>
+        <label class="checkbox-row user-active"><input type="checkbox" name="active" checked> Conta ativa</label>
+        <div class="user-create-feedback" data-user-create-feedback aria-live="polite"></div>
+        <div class="user-modal-actions"><button class="btn btn-secondary" type="button" data-user-modal-close>Cancelar</button><button class="btn" type="submit" data-user-create-submit>Criar utilizador</button></div>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

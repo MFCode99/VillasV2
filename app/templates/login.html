@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="login-screen">
+  <div class="login-box">
+    <div class="login-card">
+      <div class="login-badge">Acesso reservado</div>
+      <div class="login-logo">Villas</div>
+      <div class="login-sub">Catálogo B2B</div>
+      <p class="login-copy">Acede ao catálogo, consulta encomendas e usa a área administrativa com sessão segura no servidor.</p>
+      {% if error %}
+        <div class="login-err on">{{ error }}</div>
+      {% else %}
+        <div class="login-err">Utilizador ou password incorrectos</div>
+      {% endif %}
+      <form action="/entrar" method="post" class="login-form" autocomplete="on">
+        <div class="login-field">
+          <label class="login-lbl" for="l-user">Utilizador</label>
+          <input class="login-inp" id="l-user" type="text" name="username" placeholder="O teu utilizador" autocomplete="username" autocapitalize="none" required>
+        </div>
+        <div class="login-field">
+          <label class="login-lbl" for="l-pass">Password</label>
+          <input class="login-inp" id="l-pass" type="password" name="password" placeholder="••••••" autocomplete="current-password" required>
+        </div>
+        <button class="login-btn" type="submit">Entrar</button>
+      </form>
+      <div class="login-footer">Vítor Gouveia · +351 968 350 394</div>
+    </div>
+  </div>
+</section>
+{% endblock %}

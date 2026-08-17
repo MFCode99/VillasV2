@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>Admin</h1>
+      <p>Gestão de contas, funções e acessos da aplicação.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/dashboard">Painel</a>
+      <a class="btn btn-secondary" href="/admin/produtos">Produtos</a>
+      <a class="btn btn-secondary" href="/admin/categorias">Categorias</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Criar conta</h2>
+      <form action="/admin/users" method="post" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+        <label>Utilizador<input type="text" name="username" autocomplete="off" required></label>
+        <label>Nome completo<input type="text" name="full_name" required></label>
+        <label>Password<input type="password" name="password" required></label>
+        <label>Função
+          <select name="role">
+            <option value="client">Cliente</option>
+            <option value="admin">Admin</option>
+            <option value="developer">Developer</option>
+          </select>
+        </label>
+        <label>Email<input type="email" name="email"></label>
+        <label>Empresa<input type="text" name="company_name"></label>
+        <label>Telefone<input type="text" name="phone"></label>
+        <label>Morada<input type="text" name="address_line1"></label>
+        <label>Morada 2<input type="text" name="address_line2"></label>
+        <div class="grid compact">
+          <label>Código postal<input type="text" name="postal_code"></label>
+          <label>Cidade<input type="text" name="city"></label>
+        </div>
+        <label>País<input type="text" name="country"></label>
+        <label class="checkbox-row"><input type="checkbox" name="active" checked> Ativo</label>
+        <button class="btn" type="submit">Criar conta</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Utilizadores</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Utilizador</th>
+              <th>Nome</th>
+              <th>Função</th>
+              <th>Estado</th>
+              <th>Último login</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in users %}
+              <tr>
+                <td>{{ item.username }}</td>
+                <td>{{ item.full_name }}</td>
+                <td>
+                  <form action="/admin/users/{{ item.id }}/role" method="post" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                    <select name="role">
+                      <option value="client" {% if item.role == 'client' %}selected{% endif %}>cliente</option>
+                      <option value="admin" {% if item.role == 'admin' %}selected{% endif %}>admin</option>
+                      <option value="developer" {% if item.role == 'developer' %}selected{% endif %}>developer</option>
+                    </select>
+                    <button class="btn btn-secondary" type="submit">Guardar</button>
+                  </form>
+                </td>
+                <td>{{ 'ativo' if item.active else 'inativo' }}</td>
+                <td>{{ item.last_login_at or 'n/a' }}</td>
+                <td>
+                  <form action="/admin/users/{{ item.id }}/toggle" method="post" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+                    <button class="btn btn-secondary" type="submit">{{ 'Desativar' if item.active else 'Ativar' }}</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6">Ainda não existem utilizadores.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

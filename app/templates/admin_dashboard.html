@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card stack">
+  <div class="page-heading">
+    <div>
+      <h1>Admin</h1>
+      <p>Painel comercial do V2 com estatísticas, avisos e atalhos operacionais.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="/admin/encomendas">Encomendas</a>
+      <a class="btn btn-secondary" href="/admin/encomendas/nova">+ Nova encomenda</a>
+      <a class="btn btn-secondary" href="/admin/clientes">Clientes</a>
+      <a class="btn btn-secondary" href="/admin/avisos">Avisos <span class="cart-count">{{ warning_count }}</span></a>
+    </div>
+  </div>
+
+  <div class="grid compact">
+    <div class="panel"><h2>Pendentes</h2><p class="metric">{{ metrics.pending_orders }}</p><p><a href="/admin/encomendas?status=pending">Abrir lista</a></p></div>
+    <div class="panel"><h2>Confirmadas</h2><p class="metric">{{ metrics.confirmed_orders }}</p><p>Receita confirmada: <strong>{{ metrics.month_confirmed_revenue|money }}</strong></p></div>
+    <div class="panel"><h2>Enviadas</h2><p class="metric">{{ metrics.shipped_orders }}</p><p>Unidades mês: <strong>{{ metrics.month_confirmed_units }}</strong></p></div>
+    <div class="panel"><h2>Clientes</h2><p class="metric">{{ metrics.total_clients }}</p><p>Últimos 30 dias: <strong>{{ metrics.warning_count }}</strong> avisos</p></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel stack">
+      <h2>Hoje / mês / mês anterior</h2>
+      <p>Hoje: <strong>{{ metrics.today_confirmed_revenue|money }}</strong> / {{ metrics.today_confirmed_units }} unidades</p>
+      <p>Este mês: <strong>{{ metrics.month_confirmed_revenue|money }}</strong> / {{ metrics.month_confirmed_units }} unidades</p>
+      <p>Mês anterior: <strong>{{ metrics.previous_month_confirmed_revenue|money }}</strong> / {{ metrics.previous_month_confirmed_units }} unidades</p>
+    </div>
+    <div class="panel stack">
+      <h2>Atalhos</h2>
+      <div class="actions wrap">
+        <a class="btn btn-secondary" href="/admin/estatisticas">Estatísticas</a>
+        <a class="btn btn-secondary" href="/admin/estatisticas/export.xlsx">Exportar Excel</a>
+        <a class="btn btn-secondary" href="/admin/clientes">Gestão de clientes</a>
+        <a class="btn btn-secondary" href="/admin/produtos">Produtos</a>
+        <a class="btn btn-secondary" href="/admin/categorias">Categorias</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel stack">
+      <h2>Resumo mensal</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Mês</th>
+              <th>Pendentes</th>
+              <th>Confirmadas</th>
+              <th>Enviadas</th>
+              <th>Receita</th>
+              <th>Unidades</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in monthly_series %}
+              <tr>
+                <td>{{ '%04d-%02d'|format(row.year, row.month) }}</td>
+                <td>{{ row.pending_orders }}</td>
+                <td>{{ row.confirmed_orders }}</td>
+                <td>{{ row.shipped_orders }}</td>
+                <td>{{ row.confirmed_revenue|money }}</td>
+                <td>{{ row.confirmed_units }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel stack">
+      <h2>Clientes recentes</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Empresa</th><th>NIF</th><th>Ação</th></tr></thead>
+          <tbody>
+            {% for customer in recent_customers %}
+              <tr>
+                <td>{{ customer.full_name }}</td>
+                <td>{{ customer.company_name or '-' }}</td>
+                <td>{{ customer.nif or '-' }}</td>
+                <td><a class="btn btn-secondary" href="/admin/clientes/{{ customer.id }}">Abrir</a></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4">Sem clientes recentes.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel stack">
+    <h2>Encomendas recentes</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Número</th><th>Cliente</th><th>Estado</th><th>Origem</th><th>Total</th><th>Ação</th></tr></thead>
+        <tbody>
+          {% for order in recent_orders %}
+            <tr>
+              <td>{{ order.publicNumber }}</td>
+              <td>{{ order.customerName }}</td>
+              <td>{{ order.orderStatusLabel }}</td>
+              <td>{{ order.origin }}</td>
+              <td>{{ order.total|money }}</td>
+              <td><a class="btn btn-secondary" href="/admin/encomendas/{{ order.publicNumber }}">Ver</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">Ainda não existem encomendas recentes.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

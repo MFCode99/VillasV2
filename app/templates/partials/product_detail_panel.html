@@ -1,0 +1,78 @@
+<div class="product-view product-detail-panel" data-product-ref="{{ product.ref }}">
+  <div class="product-view-media">
+    {% if product.image_path %}
+      <img src="/media/{{ product.image_path }}" alt="{{ product.name }}">
+    {% else %}
+      <div class="product-view-empty">
+        <strong>Sem imagem</strong>
+        <span>Este produto ainda não tem imagem associada.</span>
+      </div>
+    {% endif %}
+  </div>
+  <div class="product-view-info">
+    <div class="product-view-ref">REF. {{ product.ref }}</div>
+    <h3>{{ product.name }}</h3>
+    <div class="product-view-type">{{ product.product_type }}</div>
+    <div class="product-view-price-row">
+      <strong>{{ product.price|money }}</strong>
+      {% if product.pvp %}
+        <span>PVP {{ product.pvp|money }}</span>
+      {% endif %}
+    </div>
+    <div class="product-view-details">
+      <div><span>Categoria</span><b>{{ product.category.label if product.category else product.category_slug or '-' }}</b></div>
+      <div><span>Estação</span><b>{{ product.season }}</b></div>
+      <div><span>Step</span><b>{{ product.quantity_step }}</b></div>
+      <div><span>Estado</span><b>{{ 'Ativo' if product.active else 'Inativo' }}</b></div>
+    </div>
+    <form class="product-view-form" data-cart-add-form data-product-ref="{{ product.ref }}">
+      <input type="hidden" name="ref" value="{{ product.ref }}">
+      <input type="hidden" name="cart_revision" value="{{ cart_summary.revision if cart_summary else 0 }}">
+      <input type="hidden" name="idempotency_key" value="">
+      <div class="product-view-pick">
+        <div class="product-view-field">
+          <label for="product-view-cor">Cor</label>
+          {% if product.colors_json %}
+            <select id="product-view-cor" name="color">
+              {% for color in product.colors_json|choices %}
+                <option value="{{ color }}">{{ color }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input id="product-view-cor" type="text" value="-" disabled>
+            <input type="hidden" name="color" value="">
+          {% endif %}
+        </div>
+        <div class="product-view-field">
+          <label for="product-view-tam">Tamanho</label>
+          {% if product.sizes_json %}
+            <select id="product-view-tam" name="size">
+              {% for size in product.sizes_json|choices %}
+                <option value="{{ size }}">{{ size }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input id="product-view-tam" type="text" value="-" disabled>
+            <input type="hidden" name="size" value="">
+          {% endif %}
+        </div>
+        <div class="product-view-field product-view-field-qty">
+          <label for="product-view-qty">Quantidade</label>
+          <div class="product-view-qty-row">
+            <button class="product-view-qty-btn" id="product-view-qty-minus" type="button" data-qty-dec aria-label="Diminuir">−</button>
+            <input id="product-view-qty" type="number" name="quantity" min="{{ product.quantity_step }}" step="{{ product.quantity_step }}" value="{{ product.quantity_step }}" data-quantity-input data-quantity-step="{{ product.quantity_step }}">
+            <button class="product-view-qty-btn" id="product-view-qty-plus" type="button" data-qty-inc aria-label="Aumentar">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="product-view-actions">
+        {% if can_manage_products %}
+          <a class="product-view-edit" href="/admin/produtos?edit={{ product.ref }}">Editar</a>
+        {% endif %}
+        {% if can_add_to_cart %}
+          <button class="product-view-add" type="submit">Adicionar à encomenda</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>

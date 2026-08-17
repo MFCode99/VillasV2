@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token or '' }}">
+    <meta name="apple-mobile-web-app-title" content="Villas">
+    <title>{{ title or 'Villas' }}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/assets/villas-icon.svg?v=20260816-06">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/villas-touch-icon.svg?v=20260816-06">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/main.css?v=20260816-06">
+    <link rel="stylesheet" href="/static/css/admin.css?v=20260816-06">
+    <link rel="stylesheet" href="/static/css/dev.css?v=20260816-06">
+    <script defer src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="/static/js/app.js?v=20260816-06"></script>
+    <script defer src="/static/js/admin-users.js?v=20260816-06"></script>
+    <script defer src="/static/js/feedback.js?v=20260816-06"></script>
+  </head>
+  <body class="{% if request.url.path == '/entrar' %}login-route{% endif %}">
+    {% if user %}
+    <header class="site-header">
+      <a class="brand" href="/catalogo" aria-label="Voltar ao catálogo">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="/static/assets/villas-icon.svg?v=20260816-06" alt="" width="28" height="28">
+        </span>
+        <span class="brand-text">VILLAS</span>
+      </a>
+      <div class="header-actions">
+        <details class="menu user-menu">
+          <summary class="menu-trigger user-trigger">
+            <span class="menu-pill menu-pill-user">Bem-vindo, {{ user.full_name or user.username }}</span>
+            <span class="menu-caret">▾</span>
+          </summary>
+          <div class="menu-panel">
+            <a href="/dashboard">Minha conta</a>
+            <a href="/catalogo">Catálogo</a>
+            {% if user.role == 'client' %}
+              <a href="/me/encomendas">Minhas encomendas</a>
+            {% endif %}
+            <form action="/logout" method="post" class="menu-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+              <button type="submit">Sair</button>
+            </form>
+          </div>
+        </details>
+
+        {% if user.role == 'admin' %}
+          <a class="quick-action quick-product" href="/admin/produtos">Novo produto</a>
+          <details class="menu admin-menu">
+            <summary class="menu-trigger admin-trigger">
+              <span class="menu-pill menu-pill-admin">Área Admin</span>
+              <span class="menu-caret">▾</span>
+            </summary>
+            <div class="menu-panel">
+              <a href="/admin">Dashboard</a>
+              <a href="/admin/encomendas">Encomendas</a>
+              <a href="/admin/encomendas/nova">Nova encomenda</a>
+              <a href="/admin/clientes">Clientes</a>
+              <a href="/admin/produtos">Produtos</a>
+              <a href="/admin/categorias">Categorias</a>
+              <a href="/admin/avisos">Avisos</a>
+              <a href="/admin/estatisticas">Estatísticas</a>
+              <a href="/admin/users">Utilizadores</a>
+            </div>
+          </details>
+          <details class="menu tools-menu">
+            <summary class="menu-trigger tools-trigger" aria-label="Ferramentas">
+              <span class="menu-pill menu-pill-tools">⚙</span>
+            </summary>
+            <div class="menu-panel">
+              <a href="/admin/estatisticas">Estatísticas</a>
+              <a href="/admin/avisos">Avisos</a>
+              <a href="/admin/users">Utilizadores</a>
+            </div>
+          </details>
+        {% elif user.role == 'developer' %}
+          <a class="quick-action quick-product quick-product-alt" href="/developer">Programador</a>
+          <details class="menu tools-menu">
+            <summary class="menu-trigger tools-trigger" aria-label="Ferramentas">
+              <span class="menu-pill menu-pill-tools">⚙</span>
+            </summary>
+            <div class="menu-panel">
+              <a href="/developer">Painel técnico</a>
+              <a href="/dashboard">Painel</a>
+              <a href="/catalogo">Catálogo</a>
+            </div>
+          </details>
+        {% endif %}
+
+        {% if user %}
+          {% set cart_units = cart_summary.units if cart_summary else (cart_count if cart_count is defined else 0) %}
+          <button class="cart-btn" id="cart-btn" type="button" data-cart-open>
+            <span class="cart-label">Encomenda</span>
+            <span class="cart-n" data-cart-count>{{ cart_units }}</span>
+          </button>
+        {% endif %}
+
+        <details class="menu mobile-menu">
+          <summary class="menu-trigger mobile-trigger" aria-label="Menu">☰</summary>
+          <div class="menu-panel">
+            <a href="/catalogo">Catálogo</a>
+            <a href="/dashboard">Minha conta</a>
+            {% if user %}
+              <a href="/me/encomendas">Minhas encomendas</a>
+              <button type="button" data-cart-open>Encomenda</button>
+            {% endif %}
+            {% if user.role == 'admin' %}
+              <a href="/admin">Dashboard</a>
+              <a href="/admin/encomendas">Encomendas</a>
+              <a href="/admin/encomendas/nova">Nova encomenda</a>
+              <a href="/admin/clientes">Clientes</a>
+              <a href="/admin/produtos">Produtos</a>
+              <a href="/admin/categorias">Categorias</a>
+              <a href="/admin/avisos">Avisos</a>
+              <a href="/admin/estatisticas">Estatísticas</a>
+              <a href="/admin/users">Utilizadores</a>
+            {% elif user.role == 'developer' %}
+              <a href="/developer">Painel técnico</a>
+            {% endif %}
+            <form action="/logout" method="post" class="menu-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
+              <button type="submit">Sair</button>
+            </form>
+          </div>
+        </details>
+      </div>
+    </header>
+    <div class="drawer-backdrop" data-drawer-backdrop hidden></div>
+    <aside class="drawer" data-drawer aria-hidden="true">
+      <div class="drawer-panel">
+        <button class="drawer-close" type="button" data-drawer-close aria-label="Fechar">×</button>
+        <div class="drawer-content" data-drawer-content></div>
+      </div>
+    </aside>
+    {% endif %}
+    <main class="shell" id="main">
+      {% include 'partials/flash.html' %}
+      {% block content %}{% endblock %}
+    </main>
+    <div class="feedback-modal" data-feedback-modal hidden>
+      <button class="feedback-backdrop" type="button" data-feedback-cancel aria-label="Fechar"></button>
+      <div class="feedback-card" role="alertdialog" aria-modal="true" aria-labelledby="feedback-title">
+        <span class="feedback-icon" data-feedback-icon>!</span>
+        <div><h2 id="feedback-title" data-feedback-title>Atenção</h2><p data-feedback-message></p></div>
+        <div class="feedback-actions"><button class="btn btn-secondary" type="button" data-feedback-cancel>Cancelar</button><button class="btn" type="button" data-feedback-confirm>Confirmar</button></div>
+      </div>
+    </div>
+    <div class="site-toast" data-site-toast hidden aria-live="polite"></div>
+  </body>
+</html>

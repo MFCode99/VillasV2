@@ -1,0 +1,14 @@
+{% set error = request.query_params.get('error') %}
+{% if error %}
+  <div class="alert alert-error">
+    {% if error == 'too_many_attempts' %}
+      Demasiadas tentativas de login. Aguarda alguns minutos e volta a tentar.
+    {% elif error == 'invalid_credentials' %}
+      Utilizador ou password inválidos.
+    {% elif error == 'csrf_invalid' %}
+      A verificação da sessão falhou. Tenta novamente.
+    {% else %}
+      Falha na autenticação.
+    {% endif %}
+  </div>
+{% endif %}

@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="page-heading">
+    <div>
+      <h1>{% if admin_view %}Encomendas{% else %}As minhas encomendas{% endif %}</h1>
+      <p>{% if admin_view %}Visão administrativa das encomendas guardadas no servidor.{% else %}Histórico de encomendas confirmadas pelo servidor.{% endif %}</p>
+    </div>
+    <div class="actions wrap">
+      <span class="badge">{{ order_count if order_count is defined else orders|length }} encomendas</span>
+      {% if admin_view %}
+        <a class="btn btn-secondary" href="/admin">Painel</a>
+        <a class="btn btn-secondary" href="/admin/encomendas/nova">+ Nova encomenda</a>
+        <a class="btn btn-secondary" href="/admin/estatisticas">Estatísticas</a>
+        <a class="btn btn-secondary" href="/admin/avisos">Avisos</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if admin_view %}
+    <form method="get" class="catalog-filters">
+      <div class="grid compact">
+        <label>Pesquisar
+          <input type="search" name="q" value="{{ query.q }}" placeholder="Número, cliente ou referência">
+        </label>
+        <label>Estado
+          <select name="status">
+            <option value="">Todos</option>
+            <option value="pending" {% if query.status == 'pending' %}selected{% endif %}>Pendente</option>
+            <option value="confirmed" {% if query.status == 'confirmed' %}selected{% endif %}>Confirmada</option>
+            <option value="shipped" {% if query.status == 'shipped' %}selected{% endif %}>Enviada</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid compact">
+        <label>Data inicial<input type="date" name="date_from" value="{{ query.date_from }}"></label>
+        <label>Data final<input type="date" name="date_to" value="{{ query.date_to }}"></label>
+      </div>
+      <div class="actions wrap">
+        <button class="btn" type="submit">Aplicar filtros</button>
+        <a class="btn btn-secondary" href="/admin/encomendas">Limpar</a>
+      </div>
+    </form>
+  {% endif %}
+
+  {% if orders %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Cliente</th>
+            <th>Estado</th>
+            {% if admin_view %}<th>Origem</th><th>Criada por</th>{% endif %}
+            <th>Unidades</th>
+            <th>Total</th>
+            <th>Criada</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in orders %}
+            <tr>
+              <td>{{ order.publicNumber }}</td>
+              <td>
+                <strong>{{ order.customerName }}</strong><br>
+                <span class="muted">{{ order.customerEmail or order.customerCompany or '-' }}</span>
+              </td>
+              <td>{{ order.orderStatusLabel }}</td>
+              {% if admin_view %}
+                <td>{{ order.origin }}</td>
+                <td>{{ order.createdByUsername or '-' }}</td>
+              {% endif %}
+              <td>{{ order.units }}</td>
+              <td>{{ order.total|money }}</td>
+              <td>{{ order.createdAt|datetime_pt }}</td>
+              <td>
+                {% if admin_view %}
+                  <a class="btn btn-secondary" href="/admin/encomendas/{{ order.publicNumber }}">Ver</a>
+                {% else %}
+                  <a class="btn btn-secondary" href="/me/encomendas/{{ order.publicNumber }}">Ver</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">Ainda não existem encomendas.</div>
+  {% endif %}
+</section>
+{% endblock %}

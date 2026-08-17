@@ -1,0 +1,1 @@
+<template><div class="page"><div class="empty-state"><v-icon size="72">mdi-map-marker-question-outline</v-icon><div class="text-h4 font-weight-bold mt-4">Página não encontrada</div><p>O endereço que abriu não existe.</p><v-btn to="/" color="primary" class="mt-3">Voltar ao início</v-btn></div></div></template>
