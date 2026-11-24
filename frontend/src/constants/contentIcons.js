@@ -1,0 +1,15 @@
+export const contentIcons = [
+  'mdi-bookshelf', 'mdi-view-grid-outline', 'mdi-shape-outline', 'mdi-tag-outline',
+  'mdi-package-variant-closed', 'mdi-package-variant', 'mdi-archive-outline', 'mdi-shopping-outline',
+  'mdi-hanger', 'mdi-tshirt-crew-outline', 'mdi-shoe-formal', 'mdi-shoe-sneaker',
+  'mdi-battery', 'mdi-battery-charging-medium', 'mdi-battery-high', 'mdi-battery-medium',
+  'mdi-battery-charging', 'mdi-battery-sync-outline', 'mdi-watch-variant', 'mdi-flash-outline',
+  'mdi-spray-bottle', 'mdi-bottle-tonic-outline', 'mdi-water-outline', 'mdi-weather-windy',
+  'mdi-flower-outline', 'mdi-emoticon-happy-outline', 'mdi-car-seat', 'mdi-teddy-bear',
+  'mdi-tools', 'mdi-hammer-screwdriver', 'mdi-wrench-outline', 'mdi-screwdriver',
+  'mdi-pencil-ruler', 'mdi-school-outline', 'mdi-book-open-page-variant-outline', 'mdi-briefcase-outline',
+  'mdi-food-apple-outline', 'mdi-food-outline', 'mdi-cup-outline', 'mdi-basket-outline',
+  'mdi-home-outline', 'mdi-lightbulb-outline', 'mdi-palette-outline', 'mdi-star-outline',
+  'mdi-heart-outline', 'mdi-gift-outline', 'mdi-sale-outline', 'mdi-new-box',
+  'mdi-all-inclusive', 'mdi-link-variant', 'mdi-handshake-outline', 'mdi-dots-horizontal-circle-outline',
+]

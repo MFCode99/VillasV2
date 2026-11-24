@@ -1,6 +1,7 @@
 import 'vuetify/styles'
-import '@mdi/font/css/materialdesignicons.css'
+import '../mdi-subset.css'
 import { createVuetify } from 'vuetify'
+import { defaultSiteTheme } from '../theme'
 
 export default createVuetify({
   theme: {
@@ -9,11 +10,11 @@ export default createVuetify({
       villasLight: {
         dark: false,
         colors: {
-          background: '#f4f6fa',
-          surface: '#ffffff',
-          primary: '#17243d',
-          secondary: '#c6a15b',
-          accent: '#5271a5',
+          background: defaultSiteTheme.background,
+          surface: defaultSiteTheme.surface,
+          primary: defaultSiteTheme.primary,
+          secondary: defaultSiteTheme.secondary,
+          accent: defaultSiteTheme.accent,
           success: '#2e7d61',
           warning: '#b77822',
           error: '#b83d48',
