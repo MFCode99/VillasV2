@@ -1,142 +1,150 @@
-# Vitor Gouveia · Portal Comercial
+# MLabCorp · B2B Commerce Platform
 
 <div align="center">
 
-<img src="app/static/assets/vitor-gouveia-wordmark-navy.png" alt="Vitor Gouveia" width="420">
+<img src="docs/assets/mlabcorp-logo.svg" alt="MLabCorp" width="112">
 
-**Portal B2B para gestão de catálogos, encomendas, campanhas e clientes.**
+### Plataforma moderna para catálogos, encomendas e operações comerciais
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.162+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Vue.js](https://img.shields.io/badge/Vue.js-3-42B883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Vuetify](https://img.shields.io/badge/Vuetify-4-1867C0?logo=vuetify&logoColor=white)](https://vuetifyjs.com/)
 [![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
-[![Tests](https://img.shields.io/badge/tests-104%20passed-2E8B57)](#testes-e-validação)
-
-[Produção](https://villas.mlabcorp.net/) · [Estado do serviço](https://villas.mlabcorp.net/ready)
+[![Quality](https://img.shields.io/badge/quality-pytest%20%2B%20Vitest-2E8B57)](#qualidade)
 
 </div>
 
 ---
 
-## Sobre o projeto
+## Visão geral
 
-O **Vitor Gouveia** é um portal comercial responsivo, desenvolvido sobretudo para utilização em tablet, mas totalmente funcional em computador e telemóvel. Centraliza o catálogo de produtos, encomendas, clientes, campanhas, promoções, documentos PDF e acompanhamento operacional numa única aplicação.
+Esta aplicação é uma plataforma B2B responsiva para centralizar catálogos, produtos, encomendas, campanhas e tarefas administrativas. Foi desenhada para funcionar de forma consistente em computador, tablet, telemóvel e como aplicação PWA instalada.
 
-O sistema combina uma API em FastAPI com uma aplicação Vue 3 instalável como PWA. A autenticação é feita por **sessão/cookie com proteção CSRF**; o projeto não utiliza JWT.
+O backend disponibiliza uma API FastAPI com regras de negócio e autorização centralizadas. O frontend utiliza Vue 3 e Vuetify para oferecer uma experiência rápida, acessível e adaptável a diferentes dimensões de ecrã.
 
-## Funcionalidades
+## Capacidades principais
 
-### Clientes
+### Catálogo e conteúdos
 
-- Catálogos e permissões independentes por cliente.
-- Carrinhos separados por catálogo e quantidades adaptadas aos múltiplos de cada artigo.
-- Pesquisa, filtros, categorias e variantes de produto.
-- Pré-visualização de produtos sem abandonar o catálogo.
-- Histórico e repetição de encomendas.
-- Geração de PDFs com ou sem preços.
-- Campanhas direcionadas e promoções de oferta automáticas.
-- Gestão dos próprios dados, moradas e preferência de tema.
-- Experiência PWA otimizada para iPhone, iPad e tablets Android.
+- Vários catálogos com acessos e configurações independentes.
+- Produtos com categorias, variantes, múltiplos, imagens e disponibilidade.
+- Pesquisa, filtros e navegação adaptada a interfaces táteis.
+- Pré-visualização e edição em janelas internas, sem perder o contexto da página.
+- Importação por folhas de cálculo e documentos PDF.
+- Processamento e otimização de imagens de produto.
+
+### Encomendas
+
+- Carrinhos independentes por catálogo.
+- Regras de quantidade, mínimos e permissões configuráveis.
+- Criação, repetição e acompanhamento de encomendas.
+- Fluxos administrativos para criação assistida.
+- Documentos PDF configuráveis, com ou sem preços.
+- Exportação de dados e estatísticas por período.
+
+### Campanhas e promoções
+
+- Campanhas com imagem, texto opcional, período de atividade e audiência.
+- Associação direta entre campanhas e produtos.
+- Segmentação através de grupos.
+- Descontos e ofertas condicionais por valor, quantidade ou seleção de artigos.
+- Limites de utilização e acompanhamento das ofertas atribuídas.
 
 ### Administração
 
-- Gestão de clientes, contactos, moradas, entregas e transportadoras.
-- Criação de encomendas em nome de clientes.
-- Gestão de produtos, imagens, variantes, categorias e catálogos dinâmicos.
-- Importação de produtos por Excel e por PDF, com pré-visualização, histórico e reversão.
-- Importação e associação de imagens extraídas de catálogos PDF.
-- Campanhas com imagem, texto opcional, produtos, descontos, datas e grupos de clientes.
-- Promoções condicionais por valor, quantidade, marca ou referência, com ofertas e limites por cliente.
-- Carrinhos pendentes, estatísticas mensais/anuais e exportação para Excel.
-- PDFs configuráveis por encomenda ou cliente, incluindo observações opcionais.
-- Convites pessoais por WhatsApp, de utilização única e validade configurável.
-- Avisos de atualização com histórico, estados experimental/beta/estável e confirmação de leitura.
-- Auditoria das ações administrativas e monitorização da saúde do sistema.
+- Gestão de utilizadores, acessos e estado das contas.
+- Gestão de produtos, categorias e catálogos.
+- Histórico de importações e reversão controlada.
+- Auditoria de ações administrativas.
+- Monitorização do estado da aplicação e das suas dependências.
+- Gestão de versões, notas de atualização e confirmações de leitura.
+- Preferências globais de interface e funcionalidades.
 
-### Developer
+### Experiência multiplataforma
 
-- Acesso integral às áreas administrativas.
-- Configuração global da aparência e das funcionalidades visuais do portal.
-- Gestão segura do domínio, DNS e encaminhamento de email através da Cloudflare.
-- Gestão de versões, patch notes, atualizações pendentes e notificações aos administradores.
-- Diagnóstico do serviço e consulta do histórico operacional.
-
-## Regras comerciais principais
-
-| Regra | Valor |
-| --- | --- |
-| Nome público | **Vitor Gouveia** |
-| Catálogo Villas | Encomenda mínima de **250 €** |
-| Catálogo Utilidades | Encomenda mínima de **300 €** |
-| Separação | Carrinhos, permissões e mínimos independentes por catálogo |
-| Exceções | Administradores podem desbloquear mínimos e quantidades manuais |
-| Nome público do segundo catálogo | **Utilidades** |
-
-> O nome interno legado do catálogo Utilidades nunca deve ser apresentado aos clientes.
+- Layout responsivo com prioridade para tablets.
+- Navegação inferior em ecrãs compactos.
+- Áreas seguras para dispositivos iOS.
+- Tema claro/escuro e preferências por utilizador.
+- Manifesto instalável e service worker.
+- Comportamento offline controlado, sem colocar operações críticas em risco.
 
 ## Arquitetura
 
 ```mermaid
 flowchart LR
-    U[Browser / PWA] --> V[Vue 3 + Vuetify]
-    V -->|Axios + sessão + CSRF| A[FastAPI]
+    U[Browser / PWA] --> F[Vue 3 + Vuetify]
+    F -->|Axios + sessão + CSRF| A[FastAPI]
     A --> S[Serviços de negócio]
     S --> D[(MySQL)]
-    S --> M[Media e PDFs]
-    S --> E[SMTP / Email]
-    S --> C[Cloudflare API]
+    S --> M[Media e documentos]
+    S --> N[Serviços externos]
 ```
 
 | Camada | Tecnologias |
 | --- | --- |
-| Backend | FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, Uvicorn |
-| Frontend | Vue 3, Vuetify 4, Vite 8, Pinia, Vue Router, Axios |
+| Backend | FastAPI, Pydantic 2, SQLAlchemy 2, Alembic e Uvicorn |
+| Frontend | Vue 3, Vuetify 4, Vite 8, Pinia, Vue Router e Axios |
 | Dados | MySQL 8 e PyMySQL |
-| Documentos | ReportLab, pypdf, PDF.js, Pillow, OpenPyXL |
-| Segurança | Argon2id, sessão HTTP-only, CSRF e controlo de permissões por função |
-| Operação | systemd, scripts de atualização, monitorização e backups |
+| Documentos | ReportLab, pypdf, PDF.js, Pillow e OpenPyXL |
+| Autenticação | Sessão HTTP-only, proteção CSRF e Argon2id |
+| Operação | systemd, migrações, monitorização e backups |
 | Qualidade | pytest, Vitest e Vue Test Utils |
 
-## Perfis e permissões
+## Segurança por conceção
 
-| Perfil | Acesso |
+- Autenticação por sessão/cookie; não utiliza JWT.
+- Proteção CSRF nas operações que alteram dados.
+- Autorização validada no backend para todas as áreas protegidas.
+- Passwords protegidas com Argon2id.
+- Cookies de produção configuráveis com `Secure`, `HttpOnly` e `SameSite`.
+- Segredos e credenciais mantidos fora do controlo de versão.
+- Logs, bases locais, uploads, backups e ficheiros temporários ignorados pelo Git.
+- Integrações externas isoladas em serviços próprios e sem exposição de credenciais ao browser.
+
+> Nunca devem ser incluídos no repositório dados pessoais, credenciais, tokens, cookies, ficheiros `.env`, chaves privadas ou informação real de operações comerciais.
+
+## Perfis de acesso
+
+| Perfil | Responsabilidade |
 | --- | --- |
-| Cliente | Catálogos autorizados, carrinhos, encomendas, campanhas e conta |
-| Administrador | Operação comercial, clientes, produtos, campanhas, estatísticas e configurações permitidas |
-| Developer | Acesso total, incluindo aparência, Cloudflare, atualizações e diagnóstico |
+| Utilizador | Consulta de conteúdos autorizados e realização de operações comerciais |
+| Administrador | Gestão operacional, conteúdos, utilizadores e acompanhamento |
+| Developer | Configurações técnicas, diagnóstico, integrações e atualizações |
 
-As permissões são validadas no backend. Ocultar um botão no frontend nunca substitui a autorização do servidor.
+As permissões são aplicadas no servidor. As restrições visuais do frontend funcionam apenas como complemento da segurança.
 
 ## Estrutura do repositório
 
 ```text
-VillasV2/
-├── app/                    # API, modelos, serviços, rotas e recursos do backend
+.
+├── app/                    # API, modelos, serviços e rotas do backend
 │   ├── routes/             # Endpoints web e API
-│   ├── static/             # Marca, ícones e recursos estáticos
-│   └── templates/          # Templates de compatibilidade do backend
+│   ├── static/             # Recursos estáticos da aplicação
+│   └── templates/          # Templates de compatibilidade
+├── docs/assets/            # Identidade visual da documentação
 ├── frontend/
 │   ├── public/             # Manifesto e ícones da PWA
 │   ├── scripts/            # Geração de recursos do frontend
-│   ├── src/                # Aplicação Vue
+│   ├── src/
 │   │   ├── components/     # Componentes reutilizáveis
 │   │   ├── composables/    # Comportamentos partilhados
-│   │   ├── layouts/        # Estrutura e navegação da aplicação
+│   │   ├── layouts/        # Estrutura e navegação
 │   │   ├── stores/         # Estado Pinia
-│   │   └── views/          # Páginas públicas, cliente e administração
-│   └── dist/               # Bundle compilado usado em produção
+│   │   └── views/          # Páginas da aplicação
+│   └── dist/               # Bundle compilado
 ├── migrations/versions/    # Histórico do esquema da base de dados
-├── scripts/                # Setup, importação, backup, restauro e publicação
-├── systemd/                # Serviço, monitor e temporizadores
+├── scripts/                # Setup, importação, backup e publicação
+├── systemd/                # Serviço e monitorização
 ├── tests/                  # Testes do backend e integrações
-├── updates/                # Metadados da versão e atualização pendente
-├── .env.example            # Modelo de configuração sem credenciais
-├── alembic.ini             # Configuração das migrações
-└── pyproject.toml          # Dependências e configuração Python
+├── updates/                # Metadados de versões
+├── .env.example            # Modelo de configuração sem valores reais
+├── alembic.ini             # Configuração Alembic
+└── pyproject.toml          # Projeto e dependências Python
 ```
 
-## Preparar o ambiente local
+## Desenvolvimento local
 
 ### Requisitos
 
@@ -145,7 +153,7 @@ VillasV2/
 - MySQL 8.
 - Git.
 
-### 1. Backend
+### Backend
 
 ```powershell
 python -m venv .venv
@@ -154,48 +162,42 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-Em Linux/macOS, ativa o ambiente com `source .venv/bin/activate`.
+Em Linux ou macOS, ativa o ambiente com `source .venv/bin/activate`.
 
-### 2. Configuração
+### Configuração
+
+Cria a configuração local a partir do modelo:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Preenche o `.env` local com as ligações à base de dados, segredos da aplicação e configuração de email. Nunca envies esse ficheiro para o Git.
+O ficheiro `.env` deve conter apenas valores do ambiente local e nunca deve ser enviado para o Git.
 
-As configurações abrangem:
-
-- URL pública e ambiente da aplicação;
-- bases de dados principal e de testes;
-- sessão, cookies e CSRF;
-- diretórios de media e logs;
-- SMTP e remetente do portal.
-
-### 3. Base de dados
+### Base de dados
 
 ```powershell
 alembic upgrade head
 ```
 
-As alterações ao esquema devem ser sempre implementadas através de uma nova migração Alembic.
+Cada mudança persistente ao modelo de dados deve ser acompanhada por uma migração Alembic.
 
-### 4. Frontend
+### Frontend
 
 ```powershell
 npm ci --prefix frontend
 npm run dev --prefix frontend
 ```
 
-### 5. Iniciar a API
+### API
 
 ```powershell
 uvicorn app.main:app --reload
 ```
 
-## Testes e validação
+## Qualidade
 
-Executa toda a validação antes de publicar:
+Executa a validação completa antes de publicar:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
@@ -203,78 +205,54 @@ npm test --prefix frontend
 npm run build --prefix frontend
 ```
 
-Estado da última validação completa:
+O build gera `frontend/dist`, incluindo recursos versionados, manifesto e service worker da PWA.
 
-- **104 testes backend aprovados**;
-- **5 testes backend ignorados**;
-- **6 testes frontend aprovados**;
-- bundle de produção e service worker gerados com sucesso.
+Endpoints de diagnóstico disponíveis nos ambientes configurados:
 
-O build cria `frontend/dist`, incluindo os recursos versionados, manifesto e service worker da PWA.
+| Endpoint | Objetivo |
+| --- | --- |
+| `GET /health` | Confirma que o processo da aplicação responde |
+| `GET /ready` | Confirma que a aplicação e as dependências estão prontas |
 
 ## Publicação
 
-O projeto inclui suporte para publicação controlada por systemd e para atualizações iniciadas a partir da área Developer.
-
 Fluxo recomendado:
 
-1. Executar testes do backend e frontend.
-2. Compilar `frontend/dist`.
-3. Aplicar as migrações Alembic necessárias.
-4. Publicar apenas os ficheiros alterados e o bundle compilado.
-5. Reiniciar o serviço da aplicação.
-6. Confirmar `/ready`, a página principal e os registos recentes do serviço.
+1. Executar os testes do backend e frontend.
+2. Compilar o bundle de produção.
+3. Aplicar as migrações necessárias.
+4. Publicar apenas código e artefactos previstos.
+5. Reiniciar o serviço de forma controlada.
+6. Confirmar os endpoints de diagnóstico e os registos recentes.
 
-Endpoints de estado:
-
-| Endpoint | Finalidade |
-| --- | --- |
-| `GET /health` | Confirma que a aplicação está a responder |
-| `GET /ready` | Confirma que a aplicação e as dependências estão prontas |
-
-## Atualizações e versões
-
-- A versão publicada e os patch notes são definidos em `updates/current.json`.
-- Atualizações pendentes são preparadas fora do controlo de versão.
-- O portal permite classificar versões, criar avisos e acompanhar quem viu, ignorou ou confirmou a leitura.
-- O atualizador do servidor valida e aplica o pacote, mantendo o processo separado da interface pública.
-
-## Segurança
-
-- Credenciais e segredos pertencem exclusivamente ao `.env` ou ao armazenamento seguro do servidor.
-- Tokens da Cloudflare nunca são devolvidos ao navegador depois de guardados.
-- Cookies de sessão devem usar `Secure`, `HttpOnly` e uma política `SameSite` adequada em produção.
-- Operações que alteram dados exigem sessão válida e proteção CSRF.
-- Passwords são protegidas com Argon2id.
-- Logs, bases locais, media carregada, backups, dependências e pacotes temporários não são versionados.
-- Nunca coloques passwords, tokens, chaves privadas, cookies ou dados reais de clientes em commits, testes ou documentação.
+Os detalhes de infraestrutura, endereços, credenciais e procedimentos específicos de cada ambiente devem permanecer em documentação privada, fora deste README.
 
 ## Convenções de desenvolvimento
 
-- Mantém as regras de negócio no backend e a interface focada na apresentação.
+- Mantém as regras de negócio e autorizações no backend.
 - Reutiliza componentes e composables antes de duplicar lógica Vue.
-- Cria uma migração para cada mudança persistente no modelo de dados.
-- Adiciona testes de regressão sempre que corrigires um erro.
-- Usa commits pequenos e descritivos, separados por funcionalidade, correção, build ou manutenção.
-- Preserva a compatibilidade entre computador, tablet, iPhone e PWA instalada.
-
-Exemplos de commits:
+- Cria migrações pequenas e reversíveis.
+- Adiciona testes de regressão para cada correção relevante.
+- Preserva a experiência em computador, tablet, telemóvel e PWA.
+- Separa commits por funcionalidade, correção, teste, documentação ou build.
+- Não versiona dependências instaladas nem artefactos temporários.
 
 ```text
-feat(campaigns): adicionar grupos de clientes
-fix(cart): respeitar múltiplos do produto
-test(import): cobrir referências partidas em PDF
+feat(catalog): adicionar filtro de disponibilidade
+fix(cart): corrigir atualização de quantidades
+test(import): cobrir documento com linhas partidas
+docs(readme): atualizar documentação técnica
 build(frontend): atualizar bundle de produção
 ```
 
-## Privacidade e utilização
+## Utilização
 
-Este é um projeto comercial privado. O código, os dados, os recursos de marca e a documentação não devem ser redistribuídos sem autorização.
+Projeto privado e proprietário da **MLabCorp**. O código, os recursos e a documentação não devem ser redistribuídos sem autorização.
 
 ---
 
 <div align="center">
 
-Desenvolvido para a operação comercial **Vitor Gouveia**.
+**MLabCorp** · Software, automação e infraestrutura
 
 </div>
