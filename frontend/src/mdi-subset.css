@@ -145,6 +145,9 @@
 .mdi-calendar::before {
   content: "\F00ED";
 }
+.mdi-calendar-blank-outline::before {
+  content: "\F0B66";
+}
 .mdi-calendar-check-outline::before {
   content: "\F0C44";
 }
