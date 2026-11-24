@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Cart, CartItem, Catalog, Category, GiftPromotionRedemption, Order, OrderLine, Product
+from app.gift_promotions import qualifying_gifts
 from app.services import UserAdminService
 
 
@@ -839,6 +840,58 @@ def test_gift_promotion_can_use_dynamic_brands_and_multiple_redemptions(client):
             GiftPromotionRedemption.user_id == client_id,
         )).all())
         assert len(redemptions) == 2
+
+
+def test_gift_promotion_uses_one_matching_tier_with_its_own_product(client):
+    _client_username, client_id = _user('client')
+    admin_login, _ = _api_login(client, 'admin')
+    admin_headers = {'X-CSRF-Token': admin_login['csrfToken']}
+    eligible_ref = f'TIER-{uuid4().hex[:8]}'
+    first_gift_ref = f'TIER-GIFT-A-{uuid4().hex[:6]}'
+    second_gift_ref = f'TIER-GIFT-B-{uuid4().hex[:6]}'
+    with SessionLocal() as db:
+        if db.get(Catalog, 'villas') is None:
+            db.add(Catalog(slug='villas', label='Villas', minimum_total=Decimal('250.00'), active=True))
+            db.flush()
+        db.add_all([
+            Product(ref=eligible_ref, catalog_slug='villas', name='Produto elegível por valor', product_type='Teste', price=Decimal('10.00'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}),
+            Product(ref=first_gift_ref, catalog_slug='villas', name='Oferta dos 90 aos 200', product_type='Oferta', price=Decimal('0.00'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}),
+            Product(ref=second_gift_ref, catalog_slug='villas', name='Oferta a partir dos 200', product_type='Oferta', price=Decimal('0.00'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}),
+        ])
+        db.commit()
+
+    created = client.post('/api/v1/admin/gift-promotions', headers=admin_headers, json={
+        'title': 'Oferta por escalões', 'catalog_slug': 'villas', 'condition_type': 'value',
+        'product_refs': [eligible_ref], 'active': True,
+        'tiers': [
+            {'minimum_threshold': '90', 'maximum_threshold': '200', 'gift_product_ref': first_gift_ref, 'gift_quantity': 1},
+            {'minimum_threshold': '200', 'maximum_threshold': None, 'gift_product_ref': second_gift_ref, 'gift_quantity': 2},
+        ],
+    })
+    assert created.status_code == 201
+    promotion = created.json()['promotion']
+    assert [tier['giftProductRef'] for tier in promotion['tiers']] == [first_gift_ref, second_gift_ref]
+
+    with SessionLocal() as db:
+        first_awards = qualifying_gifts(db, user_id=client_id, catalog_slug='villas', lines=[
+            {'ref': eligible_ref, 'quantity': 10, 'line_total': '100.00'},
+        ])
+        assert [(award.product.ref, award.quantity) for award in first_awards] == [(first_gift_ref, 1)]
+        second_awards = qualifying_gifts(db, user_id=client_id, catalog_slug='villas', lines=[
+            {'ref': eligible_ref, 'quantity': 20, 'line_total': '200.00'},
+        ])
+        assert [(award.product.ref, award.quantity) for award in second_awards] == [(second_gift_ref, 2)]
+
+    overlap = client.post('/api/v1/admin/gift-promotions', headers=admin_headers, json={
+        'title': 'Escalões sobrepostos', 'catalog_slug': 'villas', 'condition_type': 'value',
+        'product_refs': [eligible_ref], 'active': False,
+        'tiers': [
+            {'minimum_threshold': '90', 'maximum_threshold': '200', 'gift_product_ref': first_gift_ref, 'gift_quantity': 1},
+            {'minimum_threshold': '150', 'maximum_threshold': None, 'gift_product_ref': second_gift_ref, 'gift_quantity': 1},
+        ],
+    })
+    assert overlap.status_code == 400
+    assert overlap.json()['detail'] == 'gift_promotion_tier_overlap'
 
 
 def test_cloudflare_area_is_developer_only_and_never_returns_token(client, monkeypatch):

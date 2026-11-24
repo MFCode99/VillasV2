@@ -450,7 +450,7 @@ class OrderService:
             )
             for award in gift_awards:
                 gift = award.product
-                quantity = int(award.promotion.gift_quantity or 1)
+                quantity = award.quantity
                 hydrated_lines.append(HydratedOrderLine(
                     product=gift,
                     color='',

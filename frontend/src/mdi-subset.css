@@ -187,6 +187,9 @@
 .mdi-chart-box-outline::before {
   content: "\F154E";
 }
+.mdi-chart-timeline-variant-shimmer::before {
+  content: "\F15B6";
+}
 .mdi-check::before {
   content: "\F012C";
 }

@@ -32,7 +32,7 @@ from ..config import get_settings
 from ..dependencies import get_db
 from ..diagnostics import diagnostics
 from ..email_service import EmailService
-from ..models import AdminAuditLog, Campaign, CampaignCustomerGroup, CampaignProduct, Cart, CartItem, Catalog, Category, CustomerGroup, CustomerGroupMember, EmailDeliveryLog, GiftPromotion, GiftPromotionProduct, GiftPromotionRedemption, Order, OrderLine, OrderRequestId, Product, ProductImportBatch, Session as AppSession, SiteSetting, User, UserAccessInvite
+from ..models import AdminAuditLog, Campaign, CampaignCustomerGroup, CampaignProduct, Cart, CartItem, Catalog, Category, CustomerGroup, CustomerGroupMember, EmailDeliveryLog, GiftPromotion, GiftPromotionProduct, GiftPromotionRedemption, GiftPromotionTier, Order, OrderLine, OrderRequestId, Product, ProductImportBatch, Session as AppSession, SiteSetting, User, UserAccessInvite
 from ..media import calculate_image_zoom, persist_prepared_image, prepare_campaign_image, prepare_product_image, save_uploaded_product_image
 from ..order_service import OrderService
 from ..pdf_layout import get_pdf_layout, has_user_pdf_layout, normalize_pdf_layout, reset_user_pdf_layout, save_pdf_layout, save_user_pdf_layout
@@ -538,6 +538,13 @@ class CustomerGroupInput(BaseModel):
     user_ids: list[int] = Field(default_factory=list, max_length=5000)
 
 
+class GiftPromotionTierInput(BaseModel):
+    minimum_threshold: str
+    maximum_threshold: str | None = None
+    gift_product_ref: str = Field(min_length=1, max_length=80)
+    gift_quantity: int = Field(default=1, ge=1, le=1000)
+
+
 class GiftPromotionInput(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=2000)
@@ -548,8 +555,9 @@ class GiftPromotionInput(BaseModel):
     threshold_quantity: int | None = Field(default=None, ge=1)
     threshold_value: str | None = None
     product_refs: list[str] = Field(default_factory=list, max_length=1000)
-    gift_product_ref: str = Field(min_length=1, max_length=80)
+    gift_product_ref: str | None = Field(default=None, max_length=80)
     gift_quantity: int = Field(default=1, ge=1, le=1000)
+    tiers: list[GiftPromotionTierInput] = Field(default_factory=list, max_length=50)
     max_redemptions_per_user: int = Field(default=1, ge=1, le=1000)
     active: bool = False
     starts_at: datetime | None = None
@@ -900,6 +908,7 @@ def _gift_promotion_query():
     return select(GiftPromotion).options(
         selectinload(GiftPromotion.products).selectinload(GiftPromotionProduct.product),
         selectinload(GiftPromotion.gift_product),
+        selectinload(GiftPromotion.tiers).selectinload(GiftPromotionTier.gift_product),
         selectinload(GiftPromotion.redemptions).selectinload(GiftPromotionRedemption.user),
         selectinload(GiftPromotion.redemptions).selectinload(GiftPromotionRedemption.order),
     )
@@ -910,6 +919,7 @@ def _gift_promotion_json(promotion: GiftPromotion) -> dict[str, Any]:
     scheduled = bool((promotion.starts_at is None or promotion.starts_at <= now) and (promotion.ends_at is None or promotion.ends_at >= now))
     redemptions = sorted(promotion.redemptions, key=lambda row: (row.created_at, row.id), reverse=True)
     recipient_count = len({row.user_id for row in redemptions})
+    tiers = sorted(promotion.tiers, key=lambda row: (row.sort_order, row.minimum_threshold, row.id))
     return {
         'id': promotion.id,
         'title': promotion.title,
@@ -925,6 +935,18 @@ def _gift_promotion_json(promotion: GiftPromotion) -> dict[str, Any]:
         'giftProductRef': promotion.gift_product_ref,
         'giftProduct': _product_json(promotion.gift_product) if promotion.gift_product else None,
         'giftQuantity': promotion.gift_quantity,
+        'tiers': [
+            {
+                'id': tier.id,
+                'minimumThreshold': f'{Decimal(str(tier.minimum_threshold)):.3f}',
+                'maximumThreshold': f'{Decimal(str(tier.maximum_threshold)):.3f}' if tier.maximum_threshold is not None else None,
+                'giftProductRef': tier.gift_product_ref,
+                'giftProduct': _product_json(tier.gift_product) if tier.gift_product else None,
+                'giftQuantity': tier.gift_quantity,
+                'sortOrder': tier.sort_order,
+            }
+            for tier in tiers
+        ],
         'maxRedemptionsPerUser': promotion.max_redemptions_per_user,
         'active': bool(promotion.active),
         'currentlyActive': bool(promotion.active and scheduled),
@@ -967,35 +989,67 @@ def _apply_gift_promotion_input(db: Session, promotion: GiftPromotion, payload: 
     requested_brands = list(dict.fromkeys(str(brand).strip().casefold() for brand in payload.eligible_brands if str(brand).strip()))
     if payload.eligibility_mode == 'brands' and (not requested_brands or any(brand not in available_brands for brand in requested_brands)):
         raise HTTPException(status_code=400, detail='gift_promotion_brand_not_found')
-    gift = db.get(Product, normalize_reference(payload.gift_product_ref))
-    if gift is None or gift.catalog_slug != catalog_slug:
-        raise HTTPException(status_code=400, detail='gift_promotion_gift_not_found')
-    if gift.ref in refs:
-        raise HTTPException(status_code=400, detail='gift_promotion_gift_is_eligible')
-    threshold_value = _decimal_3(payload.threshold_value)
-    if payload.condition_type == 'quantity' and not payload.threshold_quantity:
-        raise HTTPException(status_code=400, detail='gift_promotion_threshold_required')
-    if payload.condition_type == 'value' and (threshold_value is None or threshold_value <= 0):
-        raise HTTPException(status_code=400, detail='gift_promotion_threshold_required')
+    tier_inputs = list(payload.tiers)
+    if not tier_inputs:
+        legacy_minimum = payload.threshold_value if payload.condition_type == 'value' else payload.threshold_quantity
+        if legacy_minimum is None or not payload.gift_product_ref:
+            raise HTTPException(status_code=400, detail='gift_promotion_threshold_required')
+        tier_inputs = [GiftPromotionTierInput(
+            minimum_threshold=str(legacy_minimum),
+            gift_product_ref=payload.gift_product_ref,
+            gift_quantity=payload.gift_quantity,
+        )]
+    normalized_tiers: list[tuple[Decimal, Decimal | None, Product, int]] = []
+    for tier in tier_inputs:
+        minimum = _decimal_3(tier.minimum_threshold)
+        maximum = _decimal_3(tier.maximum_threshold)
+        if minimum is None or minimum <= 0 or (maximum is not None and maximum <= minimum):
+            raise HTTPException(status_code=400, detail='gift_promotion_tier_invalid')
+        if payload.condition_type == 'quantity' and (
+            minimum != minimum.to_integral_value()
+            or (maximum is not None and maximum != maximum.to_integral_value())
+        ):
+            raise HTTPException(status_code=400, detail='gift_promotion_tier_invalid')
+        gift = db.get(Product, normalize_reference(tier.gift_product_ref))
+        if gift is None or gift.catalog_slug != catalog_slug:
+            raise HTTPException(status_code=400, detail='gift_promotion_gift_not_found')
+        if gift.ref in refs:
+            raise HTTPException(status_code=400, detail='gift_promotion_gift_is_eligible')
+        normalized_tiers.append((minimum, maximum, gift, tier.gift_quantity))
+    normalized_tiers.sort(key=lambda row: row[0])
+    for index, (minimum, _maximum, _gift, _quantity) in enumerate(normalized_tiers[1:], start=1):
+        previous_maximum = normalized_tiers[index - 1][1]
+        if previous_maximum is None or minimum < previous_maximum:
+            raise HTTPException(status_code=400, detail='gift_promotion_tier_overlap')
+    first_minimum, _first_maximum, first_gift, first_quantity = normalized_tiers[0]
     promotion.title = payload.title.strip()
     promotion.description = (payload.description or '').strip() or None
     promotion.catalog_slug = catalog_slug
     promotion.eligibility_mode = payload.eligibility_mode
     promotion.eligible_brands_json = [available_brands[brand] for brand in requested_brands] if payload.eligibility_mode == 'brands' else []
     promotion.condition_type = payload.condition_type
-    promotion.threshold_quantity = payload.threshold_quantity if payload.condition_type == 'quantity' else None
-    promotion.threshold_value = threshold_value if payload.condition_type == 'value' else None
-    promotion.gift_product_ref = gift.ref
-    promotion.gift_quantity = payload.gift_quantity
+    promotion.threshold_quantity = int(first_minimum) if payload.condition_type == 'quantity' else None
+    promotion.threshold_value = first_minimum if payload.condition_type == 'value' else None
+    promotion.gift_product_ref = first_gift.ref
+    promotion.gift_quantity = first_quantity
     promotion.max_redemptions_per_user = payload.max_redemptions_per_user
     promotion.active = payload.active
     promotion.starts_at = payload.starts_at.replace(tzinfo=None) if payload.starts_at and payload.starts_at.tzinfo else payload.starts_at
     promotion.ends_at = payload.ends_at.replace(tzinfo=None) if payload.ends_at and payload.ends_at.tzinfo else payload.ends_at
     promotion.products.clear()
+    promotion.tiers.clear()
     db.flush()
     for ref in refs if payload.eligibility_mode == 'products' else []:
         promotion.products.append(GiftPromotionProduct(product_ref=ref))
-    gift.gift_only = True
+    for sort_order, (minimum, maximum, gift, quantity) in enumerate(normalized_tiers):
+        promotion.tiers.append(GiftPromotionTier(
+            minimum_threshold=minimum,
+            maximum_threshold=maximum,
+            gift_product_ref=gift.ref,
+            gift_quantity=quantity,
+            sort_order=sort_order,
+        ))
+        gift.gift_only = True
 
 
 def _apply_campaign_input(db: Session, campaign: Campaign, payload: CampaignInput) -> None:
@@ -2152,7 +2206,8 @@ def admin_gift_promotions(db: Session = Depends(get_db), user: User = Depends(_a
 @router.post('/admin/gift-promotions')
 def admin_gift_promotion_create(payload: GiftPromotionInput, request: Request, db: Session = Depends(get_db), user: User = Depends(_api_admin)):
     _csrf(request)
-    promotion = GiftPromotion(title=payload.title.strip(), catalog_slug=payload.catalog_slug, gift_product_ref=payload.gift_product_ref)
+    initial_gift_ref = payload.tiers[0].gift_product_ref if payload.tiers else payload.gift_product_ref
+    promotion = GiftPromotion(title=payload.title.strip(), catalog_slug=payload.catalog_slug, gift_product_ref=initial_gift_ref or '')
     db.add(promotion)
     _apply_gift_promotion_input(db, promotion, payload)
     db.commit()

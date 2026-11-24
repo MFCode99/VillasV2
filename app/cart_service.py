@@ -212,7 +212,7 @@ class CartService:
             )
             for award in awards:
                 gift = award.product
-                quantity = int(award.promotion.gift_quantity or 1)
+                quantity = award.quantity
                 items.append({
                     'id': f'gift-{award.promotion.id}',
                     'ref': gift.ref,

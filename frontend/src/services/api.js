@@ -76,6 +76,8 @@ export function errorMessage(error) {
     gift_promotion_gift_not_found: 'O produto oferecido já não existe ou pertence a outro catálogo.',
     gift_promotion_gift_is_eligible: 'O produto oferecido não pode também contar para atingir a promoção.',
     gift_promotion_threshold_required: 'Indique uma quantidade ou um valor mínimo válido.',
+    gift_promotion_tier_invalid: 'Revise os limites dos escalões. O mínimo deve ser positivo e o limite final deve ser superior.',
+    gift_promotion_tier_overlap: 'Existem escalões sobrepostos. O início de um escalão não pode ficar dentro do anterior.',
     gift_promotion_invalid_period: 'A data final deve ser posterior à data inicial.',
     customer_group_not_found: 'Um dos grupos selecionados já não existe.',
     customer_group_exists: 'Já existe um grupo de clientes com esse nome.',

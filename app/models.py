@@ -270,6 +270,7 @@ class GiftPromotion(Base, TimestampMixin):
     catalog = relationship('Catalog')
     gift_product = relationship('Product', foreign_keys=[gift_product_ref])
     products = relationship('GiftPromotionProduct', back_populates='promotion', cascade='all, delete-orphan')
+    tiers = relationship('GiftPromotionTier', back_populates='promotion', cascade='all, delete-orphan', order_by='GiftPromotionTier.sort_order')
     redemptions = relationship('GiftPromotionRedemption', back_populates='promotion', cascade='all, delete-orphan')
 
 
@@ -281,6 +282,21 @@ class GiftPromotionProduct(Base):
 
     promotion = relationship('GiftPromotion', back_populates='products')
     product = relationship('Product', back_populates='gift_promotion_links', foreign_keys=[product_ref])
+
+
+class GiftPromotionTier(Base):
+    __tablename__ = 'gift_promotion_tiers'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    promotion_id: Mapped[int] = mapped_column(ForeignKey('gift_promotions.id', ondelete='CASCADE'), nullable=False, index=True)
+    minimum_threshold: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    maximum_threshold: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gift_product_ref: Mapped[str] = mapped_column(ForeignKey('products.ref'), nullable=False, index=True)
+    gift_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
+
+    promotion = relationship('GiftPromotion', back_populates='tiers')
+    gift_product = relationship('Product', foreign_keys=[gift_product_ref])
 
 
 class GiftPromotionRedemption(Base):
