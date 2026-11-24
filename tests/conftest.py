@@ -44,6 +44,9 @@ from app.models import Base
 
 @pytest.fixture(scope='session', autouse=True)
 def ensure_test_schema():
+    # The test database is disposable. Recreate it so model additions cannot
+    # leave an old local SQLite schema behind and invalidate unrelated tests.
+    Base.metadata.drop_all(bind=TestEngine, checkfirst=True)
     Base.metadata.create_all(bind=TestEngine, checkfirst=True)
     yield
 

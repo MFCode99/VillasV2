@@ -47,9 +47,7 @@ body.login-route{background:linear-gradient(180deg,#f5f2ec 0%,#efebe4 100%)}
 .site-header{position:sticky;top:0;z-index:400;min-height:var(--header-h);padding:0 16px;background:var(--header);color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(255,255,255,.08)}
 .brand{display:inline-flex;align-items:center;justify-content:flex-start;min-width:0;flex:0 0 auto;font-size:16px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#fff;line-height:1}
 .brand{gap:8px}
-.brand-mark{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
-.brand-mark img{width:28px;height:28px;display:block}
-.brand-text{font-size:16px;font-weight:800;letter-spacing:.12em;line-height:1}
+.brand-logo{display:block;height:auto;margin-inline:auto;max-height:44px;width:165px}
 .brand:hover{opacity:.92}
 .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
 
@@ -119,7 +117,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#9da9b6;box-sh
 .login-box{width:min(420px,100%)}
 .login-card{display:grid;gap:12px;padding:22px;border:1px solid var(--border);border-radius:14px;background:#fff;box-shadow:var(--shadow)}
 .login-badge{display:inline-flex;align-items:center;justify-content:center;width:max-content;padding:5px 8px;border-radius:999px;background:var(--blue);color:#17304d;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-.login-logo{font-size:28px;line-height:1;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+.login-wordmark{border-radius:8px;display:block;height:auto;margin:0 auto 8px;max-width:300px;width:88%}
 .login-sub{font-size:12px;line-height:1.35;color:var(--text-muted);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .login-copy{margin:0;font-size:13px;line-height:1.55;color:var(--text)}
 .login-err{display:none;padding:8px 10px;border:1px solid #e0c2be;border-radius:10px;background:#f6e9e7;color:#8b433a;font-size:12px}

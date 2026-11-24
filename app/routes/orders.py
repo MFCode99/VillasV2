@@ -11,7 +11,10 @@ from ..config import get_settings
 from ..dependencies import get_db
 from ..email_service import EmailService, EmailSendResult
 from ..catalog import CatalogService
+from ..cart_catalog import normalize_cart_catalog
+from ..catalog_access import can_access_catalog
 from ..order_service import OrderService
+from ..pdf_layout import get_pdf_layout
 from ..pdf_service import build_order_pdf
 from ..schemas import OrderSubmitInput
 from ..services import AuthService, UserAdminService
@@ -73,19 +76,23 @@ def submit_order(
 ):
     auth.validate_csrf_submission(request, request.headers.get('X-CSRF-Token'))
     customer_user_id = payload.customer_user_id
-    if user.role == 'admin':
+    if user.role in {'admin', 'developer'}:
         if customer_user_id is None:
-            from fastapi import HTTPException, status
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='customer_required')
-        customer = user_service.get_user(db, customer_user_id)
-        if customer is None or customer.role != 'client' or not customer.active:
-            from fastapi import HTTPException, status
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='customer_not_available')
-        # The lookup above starts SQLAlchemy's implicit read transaction; the
-        # order service owns the following write transaction.
-        db.rollback()
+            customer_user_id = user.id
+        else:
+            customer = user_service.get_user(db, customer_user_id)
+            if customer is None or customer.role != 'client' or not customer.active:
+                from fastapi import HTTPException, status
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='customer_not_available')
+            # The lookup above starts SQLAlchemy's implicit read transaction; the
+            # order service owns the following write transaction.
+            db.rollback()
     else:
         customer_user_id = user.id
+    catalog_slug = normalize_cart_catalog(payload.catalog_slug)
+    if not can_access_catalog(user, catalog_slug):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail='catalog_forbidden')
     order = service.submit_order(
         db,
         user_id=user.id,
@@ -94,18 +101,24 @@ def submit_order(
         request_id=getattr(request.state, 'request_id', None),
         cart_revision=payload.cart_revision,
         notes=payload.notes,
+        pdf_notes=payload.pdf_notes,
+        include_pdf_notes=payload.include_pdf_notes,
+        catalog_slug=catalog_slug,
+        ignore_quantity_step=payload.ignore_quantity_step and user.role in {'admin', 'developer'},
+        ignore_minimum_total=payload.ignore_minimum_total and user.role in {'admin', 'developer'},
     )
     if order.get('emailStatus') != 'sent':
+        email_event = 'order_confirmed' if order.get('orderStatus') == 'confirmed' else 'order_received'
         email_result = EmailService().send_order_event(
             db,
             order=order,
-            event='order_received',
+            event=email_event,
             request_id=getattr(request.state, 'request_id', None),
             related_user_id=customer_user_id,
         )
     else:
         email_result = EmailSendResult(status='sent')
-    order = service.get_order(db, order['id'], user_id=customer_user_id, admin=user.role == 'admin') or order
+    order = service.get_order(db, order['id'], user_id=customer_user_id, admin=user.role in {'admin', 'developer'}) or order
     order['emailResult'] = {
         'status': email_result.status,
         'providerMessageId': email_result.provider_message_id or '',
@@ -113,7 +126,7 @@ def submit_order(
     }
     if _wants_json(request):
         return JSONResponse(
-            jsonable_encoder({'ok': True, 'order': order, 'cart': {'revision': payload.cart_revision, 'units': 0}, 'message': 'Encomenda criada.'}),
+            jsonable_encoder({'ok': True, 'order': order, 'cart': {'catalog_slug': catalog_slug, 'revision': int(payload.cart_revision or 0) + 1, 'units': 0}, 'message': 'Encomenda criada.'}),
             status_code=201,
         )
     return RedirectResponse(url=order['url'], status_code=303)
@@ -170,7 +183,7 @@ def client_order_pdf(
     order = service.get_order(db, identifier, user_id=user.id)
     if order is None:
         return Response('Encomenda n?o encontrada', status_code=404)
-    pdf = build_order_pdf(order, hide_prices=hide_prices)
+    pdf = build_order_pdf(order, hide_prices=hide_prices, layout=get_pdf_layout(db, kind='no_prices' if hide_prices else 'priced', user_id=order['userId']))
     filename = f"{order['publicNumber']}{'_sem_precos' if hide_prices else ''}.pdf"
     return Response(content=pdf, media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
@@ -306,6 +319,13 @@ def admin_order_new_submit(
 ):
     auth.validate_csrf_submission(request, csrf_token)
     order = draft_service.submit(db, admin_user_id=user.id, request_id=getattr(request.state, 'request_id', None))
+    EmailService().send_order_event(
+        db,
+        order=order,
+        event='order_confirmed',
+        request_id=getattr(request.state, 'request_id', None),
+        related_user_id=order['userId'],
+    )
     return RedirectResponse(url=f"/admin/encomendas/{order['publicNumber']}", status_code=303)
 
 
@@ -377,6 +397,6 @@ def admin_order_pdf(
     order = service.get_order(db, identifier, admin=True)
     if order is None:
         return Response('Encomenda n?o encontrada', status_code=404)
-    pdf = build_order_pdf(order, hide_prices=hide_prices)
+    pdf = build_order_pdf(order, hide_prices=hide_prices, layout=get_pdf_layout(db, kind='no_prices' if hide_prices else 'priced', user_id=order['userId']))
     filename = f"{order['publicNumber']}{'_sem_precos' if hide_prices else ''}.pdf"
     return Response(content=pdf, media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="{filename}"'})

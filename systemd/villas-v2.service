@@ -12,7 +12,8 @@ EnvironmentFile=/home/nunogouveia/villas-v2/.env
 ExecStart=/home/nunogouveia/villas-v2/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=3
-NoNewPrivileges=true
+# The admin update endpoint launches the root-owned updater through sudo.
+NoNewPrivileges=false
 PrivateTmp=true
 ProtectHome=false
 ProtectSystem=full

@@ -1,13 +1,30 @@
 from __future__ import annotations
 
+import logging
+from time import perf_counter
 from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import get_settings
+from .diagnostics import diagnostics
 from .db import SessionLocal
-from .models import Session as AppSession, User
+from .models import AdminAuditLog, Session as AppSession, User
 from .security import hash_session_token, utcnow
+
+logger = logging.getLogger(__name__)
+
+
+def _cache_control_for_path(path: str) -> str:
+    if path.startswith(('/assets/', '/media/')):
+        return 'public, max-age=31536000, immutable'
+    if path.startswith('/icons/'):
+        return 'public, max-age=2592000, immutable'
+    if path.startswith('/static/'):
+        return 'public, max-age=604800, stale-while-revalidate=86400'
+    if path == '/manifest.webmanifest':
+        return 'public, max-age=300, must-revalidate'
+    return 'no-store'
 
 
 def _parse_proxy_list(raw: str) -> set[str]:
@@ -30,7 +47,48 @@ def _client_ip_from_request(request) -> str | None:
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
+    @staticmethod
+    def _audit_target(request) -> tuple[str, str | None]:
+        parts = [part for part in request.url.path.split('/') if part]
+        if parts[:2] == ['api', 'v1']:
+            parts = parts[2:]
+        if parts and parts[0] == 'admin':
+            parts = parts[1:]
+        entity_type = parts[0] if parts else 'admin'
+        entity_id = next((part for part in parts[1:] if part not in {'active', 'status', 'notes', 'image', 'save', 'catalogs', 'password', 'preview', 'commit'}), None)
+        return entity_type[:80], entity_id[:191] if entity_id else None
+
+    @staticmethod
+    def _record_admin_action(request, response, user) -> None:
+        if request.method not in {'POST', 'PUT', 'PATCH', 'DELETE'} or response.status_code >= 400:
+            return
+        if user is None or getattr(user, 'role', None) not in {'admin', 'developer'}:
+            return
+        entity_type, entity_id = RequestContextMiddleware._audit_target(request)
+        route = getattr(request.scope.get('route'), 'path', request.url.path)
+        db = SessionLocal()
+        try:
+            db.add(AdminAuditLog(
+                actor_user_id=user.id,
+                actor_username=user.username,
+                action=request.method.lower(),
+                entity_type=entity_type,
+                entity_id=entity_id,
+                route=str(route)[:255],
+                request_id=getattr(request.state, 'request_id', None),
+                ip_address=getattr(request.state, 'client_ip', None),
+                user_agent=(request.headers.get('user-agent') or '')[:255] or None,
+                status_code=response.status_code,
+                metadata_json={},
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
+
     async def dispatch(self, request, call_next):
+        started_at = perf_counter()
         settings = get_settings()
         request_id = request.headers.get('X-Request-ID') or uuid4().hex
         request.state.request_id = request_id
@@ -59,9 +117,23 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             finally:
                 db.close()
 
-        response = await call_next(request)
+        audit_user = request.state.current_user
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration_ms = (perf_counter() - started_at) * 1000
+            diagnostics.record_request(method=request.method, path=request.url.path, status_code=500, duration_ms=duration_ms, request_id=request_id)
+            logger.exception('request_failed method=%s path=%s duration_ms=%.1f', request.method, request.url.path, duration_ms, extra={'request_id': request_id})
+            raise
+        duration_ms = (perf_counter() - started_at) * 1000
+        diagnostics.record_request(method=request.method, path=request.url.path, status_code=response.status_code, duration_ms=duration_ms, request_id=request_id)
+        if duration_ms >= diagnostics.slow_request_ms:
+            logger.warning('slow_request method=%s path=%s status=%s duration_ms=%.1f', request.method, request.url.path, response.status_code, duration_ms, extra={'request_id': request_id})
+        self._record_admin_action(request, response, audit_user)
         response.headers['X-Request-ID'] = request_id
-        response.headers.setdefault('Cache-Control', 'no-store')
+        response.headers['X-Response-Time-Ms'] = f'{duration_ms:.1f}'
+        response.headers['Server-Timing'] = f'app;dur={duration_ms:.1f}'
+        response.headers['Cache-Control'] = _cache_control_for_path(request.url.path)
         response.headers.setdefault('X-Content-Type-Options', 'nosniff')
         response.headers.setdefault('Referrer-Policy', 'same-origin')
         response.headers.setdefault('X-Frame-Options', 'DENY')

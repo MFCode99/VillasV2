@@ -16,7 +16,7 @@ def require_authenticated_user(user: User | None = Depends(current_user)) -> Use
 
 
 def require_admin(user: User = Depends(require_authenticated_user)) -> User:
-    if user.role != UserRole.ADMIN.value:
+    if user.role not in {UserRole.ADMIN.value, UserRole.DEVELOPER.value}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='forbidden')
     return user
 

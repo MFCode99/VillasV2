@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -9,9 +10,12 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import get_settings
+from .db import engine
+from .diagnostics import diagnostics
 from .catalog import split_csv_values
 from .formatters import format_datetime, format_money
 from .logging_conf import configure_logging
@@ -32,7 +36,34 @@ configure_logging(settings)
 settings.media_root.mkdir(parents=True, exist_ok=True)
 settings.log_dir.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title=settings.app_name, version='0.1.0')
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    checks = {
+        'database': {'ok': False},
+        'storage': {'ok': False},
+        'email': {'configured': bool(settings.smtp_host and settings.smtp_user and settings.smtp_password and settings.smtp_from)},
+    }
+    try:
+        settings.media_root.mkdir(parents=True, exist_ok=True)
+        settings.log_dir.mkdir(parents=True, exist_ok=True)
+        (settings.media_root / 'products').mkdir(parents=True, exist_ok=True)
+        checks['storage'] = {'ok': True}
+    except OSError as exc:
+        checks['storage'] = {'ok': False, 'reason': type(exc).__name__}
+    try:
+        with engine.connect() as connection:
+            connection.execute(text('SELECT 1')).scalar_one()
+        checks['database'] = {'ok': True}
+    except Exception as exc:
+        checks['database'] = {'ok': False, 'reason': type(exc).__name__}
+    diagnostics.set_startup_checks(checks)
+    application.state.startup_checks = checks
+    yield
+    engine.dispose()
+
+
+app = FastAPI(title=settings.app_name, version='0.1.0', lifespan=lifespan)
 app.state.settings = settings
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(RequestContextMiddleware)
@@ -48,6 +79,27 @@ app.mount('/media', StaticFiles(directory=str(settings.media_root)), name='media
 frontend_dist = Path('frontend/dist')
 if frontend_dist.exists():
     app.mount('/assets', StaticFiles(directory=str(frontend_dist / 'assets')), name='frontend-assets')
+    app.mount('/icons', StaticFiles(directory=str(frontend_dist / 'icons')), name='frontend-icons')
+
+
+@app.get('/manifest.webmanifest', include_in_schema=False)
+def web_app_manifest():
+    manifest_file = frontend_dist / 'manifest.webmanifest'
+    if not manifest_file.exists():
+        return JSONResponse(status_code=404, content={'detail': 'manifest_not_built'})
+    return FileResponse(manifest_file, media_type='application/manifest+json')
+
+
+@app.get('/sw.js', include_in_schema=False)
+def service_worker():
+    worker_file = frontend_dist / 'sw.js'
+    if not worker_file.exists():
+        return JSONResponse(status_code=404, content={'detail': 'service_worker_not_built'})
+    return FileResponse(
+        worker_file,
+        media_type='application/javascript',
+        headers={'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/'},
+    )
 
 
 @app.get('/nova', include_in_schema=False)
@@ -68,22 +120,33 @@ def vue_frontend(frontend_path: str = ''):
 # still used by the new interface (PDFs, exports and order/cart operations).
 for frontend_path in (
     '/',
+    '/index.html',
     '/login',
+    '/conta',
+    '/convite',
     '/catalogo',
     '/catalogo/{frontend_path:path}',
     '/carrinho',
+    '/carrinho/{frontend_path:path}',
     '/encomendas',
     '/encomendas/{frontend_path:path}',
     '/admin',
     '/admin/utilizadores',
     '/admin/utilizadores/{frontend_path:path}',
     '/admin/produtos',
+    '/admin/catalogos',
+    '/admin/campanhas',
+    '/admin/importacao',
     '/admin/categorias',
     '/admin/encomendas',
     '/admin/encomendas/nova',
     '/admin/encomendas/{frontend_path:path}',
     '/admin/avisos',
+    '/admin/acompanhamento/{frontend_path:path}',
+    '/admin/developer/{frontend_path:path}',
     '/admin/estatisticas',
+    '/admin/historico',
+    '/admin/gestao/atualizacoes',
 ):
     app.add_api_route(frontend_path, vue_frontend, methods=['GET'], include_in_schema=False)
 
@@ -101,13 +164,6 @@ app.include_router(catalog_admin_router)
 app.include_router(admin_router)
 app.include_router(developer_router)
 app.include_router(web_router)
-
-
-@app.on_event('startup')
-def startup() -> None:
-    settings.media_root.mkdir(parents=True, exist_ok=True)
-    settings.log_dir.mkdir(parents=True, exist_ok=True)
-    (settings.media_root / 'products').mkdir(parents=True, exist_ok=True)
 
 
 @app.exception_handler(StarletteHTTPException)

@@ -12,13 +12,21 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from .catalog import normalize_choice_text, normalize_qty_step, normalize_reference, normalize_text, split_csv_values, to_decimal
+from .cart_catalog import cart_item_catalog, catalog_revision, increment_catalog_revision, minimum_total_for_catalog, normalize_cart_catalog
 from .models import Cart, CartItem, CartOperation, Product, User
+from .gift_promotions import qualifying_gifts
+from .promotions import PromotionInfo, active_promotions
 
 MONEY = Decimal('0.01')
+UNIT_PRICE = Decimal('0.001')
 
 
 def _money(value: Any) -> Decimal:
     return to_decimal(value, Decimal('0.00')).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def _unit_price(value: Any) -> Decimal:
+    return Decimal(str(value or 0)).quantize(UNIT_PRICE, rounding=ROUND_HALF_UP)
 
 
 def _hash_payload(operation: str, payload: dict[str, Any]) -> str:
@@ -49,7 +57,7 @@ class CartService:
     def _lock_cart(self, db: Session, user_id: int) -> Cart:
         cart = db.scalar(select(Cart).where(Cart.user_id == user_id).with_for_update())
         if cart is None:
-            cart = Cart(user_id=user_id, revision=0, source_version='v2')
+            cart = Cart(user_id=user_id, revision=0, catalog_revisions_json={}, source_version='v2')
             db.add(cart)
             db.flush()
         return cart
@@ -66,7 +74,7 @@ class CartService:
         )
 
     def _product_is_available(self, product: Product) -> bool:
-        return bool(product.active and product.manual_active and (product.category is None or product.category.active))
+        return bool(product.active and product.manual_active and not product.gift_only and (product.category is None or product.category.active))
 
     def _normalize_variant(self, raw_value: str | None, values: list[str], *, field_name: str) -> str:
         normalized = normalize_text(raw_value)
@@ -107,8 +115,9 @@ class CartService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='product_not_available')
         return product
 
-    def _cart_item_snapshot(self, product: Product, color: str, size: str, quantity: int) -> dict[str, Any]:
-        unit_price = _money(product.price)
+    def _cart_item_snapshot(self, db: Session, user_id: int, product: Product, color: str, size: str, quantity: int) -> dict[str, Any]:
+        promotion = active_promotions(db, user_id, [product]).get(product.ref)
+        unit_price = _unit_price(promotion.price if promotion else product.price)
         line_total = _money(unit_price * Decimal(quantity))
         return {
             'product_name_snapshot': normalize_text(product.name),
@@ -119,12 +128,17 @@ class CartService:
                 'name': normalize_text(product.name),
                 'product_type': normalize_text(product.product_type),
                 'category_slug': product.category_slug,
+                'catalog_slug': product.catalog_slug,
                 'colors': list(product.colors_json or []),
                 'sizes': list(product.sizes_json or []),
                 'image_path': product.image_path,
                 'image_checksum': product.image_checksum,
                 'image_mime_type': product.image_mime_type,
                 'quantity_step': int(product.quantity_step or 1),
+                'quick_quantities': list((product.metadata_json or {}).get('quick_quantities') or []),
+                'original_price': f'{product.price:.3f}',
+                'campaign_id': promotion.campaign_id if promotion else None,
+                'campaign_title': promotion.campaign_title if promotion else None,
             },
             'unit_price_snapshot': unit_price,
             'line_total_snapshot': line_total,
@@ -133,7 +147,7 @@ class CartService:
             'quantity': quantity,
         }
 
-    def _serialize_item(self, item: CartItem) -> dict[str, Any]:
+    def _serialize_item(self, item: CartItem, promotion: PromotionInfo | None = None) -> dict[str, Any]:
         product = item.product
         product_data = item.product_snapshot or {}
         available = bool(product and self._product_is_available(product))
@@ -141,7 +155,12 @@ class CartService:
         display_type = normalize_text(product.product_type) if product else normalize_text(item.product_type_snapshot)
         image_path = product.image_path if product and product.image_path else item.product_image_snapshot or product_data.get('image_path')
         quantity_step = int(product.quantity_step or 1) if product else int(product_data.get('quantity_step') or 1)
-        price = _money(product.price if product else item.unit_price_snapshot)
+        catalog_slug = product.catalog_slug if product else product_data.get('catalog_slug', 'villas')
+        configured_shortcuts = list((product.metadata_json or {}).get('quick_quantities') or []) if product else list(product_data.get('quick_quantities') or [])
+        quick_quantities = sorted({int(value) for value in configured_shortcuts if str(value).isdigit() and int(value) >= quantity_step and int(value) % quantity_step == 0})
+        if not quick_quantities and catalog_slug == 'interpilhas' and product is not None:
+            quick_quantities = sorted({int(value) for value in (product.case_inner, product.case_outer) if value and int(value) >= quantity_step and int(value) % quantity_step == 0})
+        price = _unit_price(promotion.price if promotion else (product.price if product else item.unit_price_snapshot))
         line_total = _money(price * Decimal(int(item.quantity)))
         return {
             'id': item.id,
@@ -152,39 +171,85 @@ class CartService:
             'size': normalize_choice_text(item.size),
             'quantity': int(item.quantity),
             'quantity_step': quantity_step,
-            'unit_price': f'{price:.2f}',
+            'quick_quantities': quick_quantities[:4],
+            'unit_price': f'{price:.3f}' if catalog_slug == 'interpilhas' else f'{price:.2f}',
             'line_total': f'{line_total:.2f}',
+            'original_price': (f'{promotion.original_price:.3f}' if catalog_slug == 'interpilhas' else f'{promotion.original_price:.2f}') if promotion else None,
+            'promotion': {'campaignId': promotion.campaign_id, 'title': promotion.campaign_title, 'label': promotion.label} if promotion else None,
+            'catalog_slug': catalog_slug,
             'image_path': image_path,
             'available': available,
             'warning': None if available else 'Produto indisponível',
+            'is_gift': False,
         }
 
-    def _serialize_cart(self, cart: Cart | None) -> dict[str, Any]:
+    def _serialize_cart(self, cart: Cart | None, catalog_slug: str = 'villas', db: Session | None = None) -> dict[str, Any]:
+        catalog_slug = normalize_cart_catalog(catalog_slug)
         if cart is None:
             return {
+                'catalog_slug': catalog_slug,
+                'minimum_total': f'{minimum_total_for_catalog(catalog_slug, db):.2f}',
                 'revision': 0,
                 'units': 0,
                 'lines': 0,
                 'subtotal': '0.00',
                 'total': '0.00',
                 'items': [],
+                'updatedAt': None,
             }
-        ordered_items = sorted(list(cart.items), key=lambda item: (int(item.id or 0), item.product_ref, item.color, item.size))
-        items = [self._serialize_item(item) for item in ordered_items]
+        ordered_items = sorted(
+            (item for item in cart.items if cart_item_catalog(item) == catalog_slug),
+            key=lambda item: (int(item.id or 0), item.product_ref, item.color, item.size),
+        )
+        promotions = active_promotions(db, cart.user_id, [item.product for item in ordered_items if item.product]) if db is not None else {}
+        items = [self._serialize_item(item, promotions.get(item.product_ref)) for item in ordered_items]
+        if db is not None:
+            awards = qualifying_gifts(
+                db,
+                user_id=cart.user_id,
+                catalog_slug=catalog_slug,
+                lines=[{'ref': item['ref'], 'quantity': item['quantity'], 'line_total': item['line_total']} for item in items],
+            )
+            for award in awards:
+                gift = award.product
+                quantity = int(award.promotion.gift_quantity or 1)
+                items.append({
+                    'id': f'gift-{award.promotion.id}',
+                    'ref': gift.ref,
+                    'name': gift.name,
+                    'type': gift.product_type,
+                    'color': '',
+                    'size': '',
+                    'quantity': quantity,
+                    'quantity_step': 1,
+                    'quick_quantities': [],
+                    'unit_price': '0.00',
+                    'line_total': '0.00',
+                    'original_price': None,
+                    'promotion': {'giftPromotionId': award.promotion.id, 'title': award.promotion.title, 'label': 'Oferta automática'},
+                    'catalog_slug': gift.catalog_slug,
+                    'image_path': gift.image_path,
+                    'available': True,
+                    'warning': None,
+                    'is_gift': True,
+                })
         units = sum(int(item['quantity']) for item in items)
         subtotal = sum((Decimal(item['line_total']) for item in items), Decimal('0.00')).quantize(MONEY, rounding=ROUND_HALF_UP)
         return {
-            'revision': int(cart.revision or 0),
+            'catalog_slug': catalog_slug,
+            'minimum_total': f'{minimum_total_for_catalog(catalog_slug, db):.2f}',
+            'revision': catalog_revision(cart, catalog_slug),
             'units': units,
             'lines': len(items),
             'subtotal': f'{subtotal:.2f}',
             'total': f'{subtotal:.2f}',
             'items': items,
+        'updatedAt': cart.updated_at.isoformat() if cart.updated_at else None,
         }
 
-    def get_cart(self, db: Session, user_id: int) -> dict[str, Any]:
+    def get_cart(self, db: Session, user_id: int, catalog_slug: str = 'villas') -> dict[str, Any]:
         cart = db.scalar(self._cart_items_query(user_id))
-        return self._serialize_cart(cart)
+        return self._serialize_cart(cart, catalog_slug, db)
 
     def _load_operation_response(self, operation: CartOperation) -> dict[str, Any]:
         return operation.response_json or {}
@@ -201,16 +266,16 @@ class CartService:
             )
         )
 
-    def _ensure_revision(self, cart: Cart, expected_revision: int | None) -> None:
+    def _ensure_revision(self, cart: Cart, expected_revision: int | None, catalog_slug: str = 'villas') -> None:
         if expected_revision is None:
             return
-        if int(cart.revision or 0) != int(expected_revision):
+        if catalog_revision(cart, catalog_slug) != int(expected_revision):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='cart_revision_mismatch')
 
-    def _add_or_update_item(self, cart: Cart, product: Product, color: str, size: str, quantity: int) -> CartItem:
+    def _add_or_update_item(self, db: Session, cart: Cart, product: Product, color: str, size: str, quantity: int) -> CartItem:
         existing = next((item for item in cart.items if item.product_ref == product.ref and item.color == color and item.size == size), None)
         if existing is None:
-            snapshot = self._cart_item_snapshot(product, color, size, quantity)
+            snapshot = self._cart_item_snapshot(db, cart.user_id, product, color, size, quantity)
             item = CartItem(
                 cart_user_id=cart.user_id,
                 product_ref=product.ref,
@@ -227,7 +292,7 @@ class CartService:
             cart.items.append(item)
             return item
         existing.quantity = int(existing.quantity) + quantity
-        snapshot = self._cart_item_snapshot(product, color, size, existing.quantity)
+        snapshot = self._cart_item_snapshot(db, cart.user_id, product, color, size, existing.quantity)
         existing.unit_price_snapshot = snapshot['unit_price_snapshot']
         existing.line_total_snapshot = snapshot['line_total_snapshot']
         existing.product_name_snapshot = snapshot['product_name_snapshot']
@@ -247,8 +312,11 @@ class CartService:
         size: str | None = None,
         quantity: int | None = None,
         expected_revision: int | None = None,
+        catalog_slug: str = 'villas',
     ) -> dict[str, Any]:
+        catalog_slug = normalize_cart_catalog(catalog_slug)
         payload = {
+            'catalog_slug': catalog_slug,
             'ref': normalize_reference(ref),
             'color': normalize_text(color),
             'size': normalize_text(size),
@@ -267,8 +335,10 @@ class CartService:
                         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='idempotency_key_conflict')
                     return self._load_operation_response(existing_operation)
 
-                self._ensure_revision(cart, expected_revision)
+                self._ensure_revision(cart, expected_revision, catalog_slug)
                 product = self._hydrate_product(db, ref)
+                if product.catalog_slug != catalog_slug:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='product_catalog_mismatch')
                 product_colors = split_csv_values(product.colors_json or [])
                 product_sizes = split_csv_values(product.sizes_json or [])
                 color_value = self._normalize_variant(color, product_colors, field_name='color')
@@ -276,17 +346,17 @@ class CartService:
                 step = normalize_qty_step(product.quantity_step, default=1)
                 quantity_value = self._normalize_quantity(quantity, step)
 
-                self._add_or_update_item(cart, product, color_value, size_value, quantity_value)
-                cart.revision = int(cart.revision or 0) + 1
+                self._add_or_update_item(db, cart, product, color_value, size_value, quantity_value)
+                increment_catalog_revision(cart, catalog_slug)
                 db.flush()
-                response = self._serialize_cart(cart)
+                response = self._serialize_cart(cart, catalog_slug, db)
                 self._store_operation(
                     db,
                     user_id=user_id,
                     key=idempotency_key,
                     operation='add_item',
                     request_hash=request_hash,
-                    cart_revision=cart.revision,
+                    cart_revision=catalog_revision(cart, catalog_slug),
                     response=response,
                 )
                 db.flush()
@@ -308,12 +378,15 @@ class CartService:
         item_id: int,
         idempotency_key: str,
         quantity: int,
+        ignore_quantity_step: bool = False,
         expected_revision: int | None = None,
+        catalog_slug: str = 'villas',
     ) -> dict[str, Any]:
-        payload = {'item_id': item_id, 'quantity': quantity, 'expected_revision': expected_revision}
+        catalog_slug = normalize_cart_catalog(catalog_slug)
+        payload = {'catalog_slug': catalog_slug, 'item_id': item_id, 'quantity': quantity, 'ignore_quantity_step': bool(ignore_quantity_step), 'expected_revision': expected_revision}
         request_hash = _hash_payload('update_item', payload)
         with db.begin():
-            self._lock_user(db, user_id)
+            user = self._lock_user(db, user_id)
             cart = self._lock_cart(db, user_id)
             existing_operation = self._operation_key(db, user_id, idempotency_key)
             if existing_operation is not None:
@@ -323,30 +396,32 @@ class CartService:
             item = db.get(CartItem, item_id)
             if item is None or item.cart_user_id != user_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='cart_item_not_found')
-            self._ensure_revision(cart, expected_revision)
+            if cart_item_catalog(item) != catalog_slug:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='cart_item_not_found')
+            self._ensure_revision(cart, expected_revision, catalog_slug)
             product = item.product
             if product is None or not self._product_is_available(product):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='product_not_available')
-            step = normalize_qty_step(product.quantity_step, default=1)
+            step = 1 if ignore_quantity_step and normalize_text(user.role).casefold() in {'admin', 'developer'} else normalize_qty_step(product.quantity_step, default=1)
             quantity_value = self._normalize_quantity(quantity, step)
             item.quantity = quantity_value
-            snapshot = self._cart_item_snapshot(product, item.color, item.size, quantity_value)
+            snapshot = self._cart_item_snapshot(db, user_id, product, item.color, item.size, quantity_value)
             item.unit_price_snapshot = snapshot['unit_price_snapshot']
             item.line_total_snapshot = snapshot['line_total_snapshot']
             item.product_name_snapshot = snapshot['product_name_snapshot']
             item.product_type_snapshot = snapshot['product_type_snapshot']
             item.product_image_snapshot = snapshot['product_image_snapshot']
             item.product_snapshot = snapshot['product_snapshot']
-            cart.revision = int(cart.revision or 0) + 1
+            increment_catalog_revision(cart, catalog_slug)
             db.flush()
-            response = self._serialize_cart(cart)
+            response = self._serialize_cart(cart, catalog_slug, db)
             self._store_operation(
                 db,
                 user_id=user_id,
                 key=idempotency_key,
                 operation='update_item',
                 request_hash=request_hash,
-                cart_revision=cart.revision,
+                cart_revision=catalog_revision(cart, catalog_slug),
                 response=response,
             )
             db.flush()
@@ -360,8 +435,10 @@ class CartService:
         item_id: int,
         idempotency_key: str,
         expected_revision: int | None = None,
+        catalog_slug: str = 'villas',
     ) -> dict[str, Any]:
-        payload = {'item_id': item_id, 'expected_revision': expected_revision}
+        catalog_slug = normalize_cart_catalog(catalog_slug)
+        payload = {'catalog_slug': catalog_slug, 'item_id': item_id, 'expected_revision': expected_revision}
         request_hash = _hash_payload('remove_item', payload)
         with db.begin():
             self._lock_user(db, user_id)
@@ -374,18 +451,20 @@ class CartService:
             item = db.get(CartItem, item_id)
             if item is None or item.cart_user_id != user_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='cart_item_not_found')
-            self._ensure_revision(cart, expected_revision)
+            if cart_item_catalog(item) != catalog_slug:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='cart_item_not_found')
+            self._ensure_revision(cart, expected_revision, catalog_slug)
             db.delete(item)
-            cart.revision = int(cart.revision or 0) + 1
+            increment_catalog_revision(cart, catalog_slug)
             db.flush()
-            response = self._serialize_cart(cart)
+            response = self._serialize_cart(cart, catalog_slug, db)
             self._store_operation(
                 db,
                 user_id=user_id,
                 key=idempotency_key,
                 operation='remove_item',
                 request_hash=request_hash,
-                cart_revision=cart.revision,
+                cart_revision=catalog_revision(cart, catalog_slug),
                 response=response,
             )
             db.flush()
@@ -398,8 +477,10 @@ class CartService:
         user_id: int,
         idempotency_key: str,
         expected_revision: int | None = None,
+        catalog_slug: str = 'villas',
     ) -> dict[str, Any]:
-        payload = {'expected_revision': expected_revision}
+        catalog_slug = normalize_cart_catalog(catalog_slug)
+        payload = {'catalog_slug': catalog_slug, 'expected_revision': expected_revision}
         request_hash = _hash_payload('clear_cart', payload)
         with db.begin():
             self._lock_user(db, user_id)
@@ -409,19 +490,20 @@ class CartService:
                 if existing_operation.request_hash != request_hash:
                     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='idempotency_key_conflict')
                 return self._load_operation_response(existing_operation)
-            self._ensure_revision(cart, expected_revision)
+            self._ensure_revision(cart, expected_revision, catalog_slug)
             for item in list(cart.items):
-                db.delete(item)
-            cart.revision = int(cart.revision or 0) + 1
+                if cart_item_catalog(item) == catalog_slug:
+                    db.delete(item)
+            increment_catalog_revision(cart, catalog_slug)
             db.flush()
-            response = self._serialize_cart(cart)
+            response = self._serialize_cart(cart, catalog_slug, db)
             self._store_operation(
                 db,
                 user_id=user_id,
                 key=idempotency_key,
                 operation='clear_cart',
                 request_hash=request_hash,
-                cart_revision=cart.revision,
+                cart_revision=catalog_revision(cart, catalog_slug),
                 response=response,
             )
             db.flush()
@@ -435,8 +517,10 @@ class CartService:
         idempotency_key: str,
         items: list[dict[str, Any]],
         expected_revision: int | None = None,
+        catalog_slug: str = 'villas',
     ) -> dict[str, Any]:
-        payload = {'items': items, 'expected_revision': expected_revision}
+        catalog_slug = normalize_cart_catalog(catalog_slug)
+        payload = {'catalog_slug': catalog_slug, 'items': items, 'expected_revision': expected_revision}
         request_hash = _hash_payload('replace_cart', payload)
         with db.begin():
             self._lock_user(db, user_id)
@@ -446,11 +530,13 @@ class CartService:
                 if existing_operation.request_hash != request_hash:
                     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='idempotency_key_conflict')
                 return self._load_operation_response(existing_operation)
-            self._ensure_revision(cart, expected_revision)
+            self._ensure_revision(cart, expected_revision, catalog_slug)
 
             canonical: dict[tuple[str, str, str], dict[str, Any]] = {}
             for row in items:
                 product = self._hydrate_product(db, row['ref'])
+                if product.catalog_slug != catalog_slug:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='product_catalog_mismatch')
                 product_colors = split_csv_values(product.colors_json or [])
                 product_sizes = split_csv_values(product.sizes_json or [])
                 color_value = self._normalize_variant(row.get('color'), product_colors, field_name='color')
@@ -466,11 +552,12 @@ class CartService:
                 }
 
             for item in list(cart.items):
-                db.delete(item)
+                if cart_item_catalog(item) == catalog_slug:
+                    db.delete(item)
             db.flush()
             for entry in canonical.values():
                 product = entry['product']
-                snapshot = self._cart_item_snapshot(product, entry['color'], entry['size'], entry['quantity'])
+                snapshot = self._cart_item_snapshot(db, user_id, product, entry['color'], entry['size'], entry['quantity'])
                 cart.items.append(
                     CartItem(
                         cart_user_id=user_id,
@@ -486,16 +573,16 @@ class CartService:
                         product_snapshot=snapshot['product_snapshot'],
                     )
                 )
-            cart.revision = int(cart.revision or 0) + 1
+            increment_catalog_revision(cart, catalog_slug)
             db.flush()
-            response = self._serialize_cart(cart)
+            response = self._serialize_cart(cart, catalog_slug, db)
             self._store_operation(
                 db,
                 user_id=user_id,
                 key=idempotency_key,
                 operation='replace_cart',
                 request_hash=request_hash,
-                cart_revision=cart.revision,
+                cart_revision=catalog_revision(cart, catalog_slug),
                 response=response,
             )
             db.flush()

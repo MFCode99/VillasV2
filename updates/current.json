@@ -1,0 +1,9 @@
+{
+  "version": "2026.11.06.1",
+  "releasedAt": "2026-11-06T12:00:00Z",
+  "notes": [
+    "Escolha da validade dos convites de acesso entre 1 hora e 30 dias.",
+    "Convites pessoais continuam a ser de utilização única e um novo convite invalida o anterior.",
+    "Nova área de gestão para consultar atualizações e respetivas notas."
+  ]
+}

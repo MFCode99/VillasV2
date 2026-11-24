@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
-    app_name: str = 'Villas V2'
+    app_name: str = 'Vitor Gouveia'
     app_env: str = 'development'
     public_url: str = 'http://127.0.0.1:8001'
     trusted_proxy: str = '127.0.0.1'
@@ -29,11 +29,14 @@ class Settings(BaseSettings):
     log_level: str = 'INFO'
     media_root: Path = Path('media')
     log_dir: Path = Path('logs')
+    update_dir: Path = Path('updates')
     smtp_host: str = ''
     smtp_port: int = 587
     smtp_user: str = ''
     smtp_password: str = Field(default='', repr=False)
     smtp_from: str = ''
+    cloudflare_zone_name: str = 'vitorgouveia.com'
+    cloudflare_token_file: Path = Path('data/cloudflare-token')
     trusted_proxies: str = '127.0.0.1'
 
     @field_validator(
@@ -52,6 +55,7 @@ class Settings(BaseSettings):
         'smtp_host',
         'smtp_user',
         'smtp_from',
+        'cloudflare_zone_name',
         'trusted_proxies',
         mode='before',
     )

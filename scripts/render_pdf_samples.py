@@ -8,10 +8,11 @@ from app.pdf_service import build_order_pdf
 
 def sample_order() -> dict:
     items = [
-        {'ref': '099', 'name': 'Soquete invisível senhora', 'color': 'PRETO', 'size': '30-35', 'quantity': 12, 'unitPrice': '1.25', 'lineTotal': '15.00'},
-        {'ref': '2145', 'name': 'Lycra seda 15 DEN - embalagem de 2 pares', 'color': 'MUSKADE', 'size': 'Único', 'quantity': 24, 'unitPrice': '0.79', 'lineTotal': '18.96'},
-        {'ref': '4230', 'name': 'Meia térmica confortável para homem', 'color': 'MARINHO', 'size': 'L/XL', 'quantity': 12, 'unitPrice': '3.45', 'lineTotal': '41.40'},
-        {'ref': '6002', 'name': 'Peúga invisível homem', 'color': 'BRANCO', 'size': '40-45', 'quantity': 12, 'unitPrice': '1.50', 'lineTotal': '18.00'},
+        {'ref': '2145', 'name': 'Mini meia lycra seda 15 DEN', 'color': 'MUSKADE', 'size': 'Único', 'quantity': 24, 'unitPrice': '0.79', 'lineTotal': '18.96', 'categoryLabel': 'Mini meia', 'categorySortOrder': 20, 'productSortOrder': 1},
+        {'ref': '099', 'name': 'Soquete invisível senhora', 'color': 'PRETO', 'size': '30-35', 'quantity': 12, 'unitPrice': '1.25', 'lineTotal': '15.00', 'categoryLabel': 'Soquetes', 'categorySortOrder': 10, 'productSortOrder': 1},
+        {'ref': '2145', 'name': 'Mini meia lycra seda 15 DEN', 'color': 'PRETO', 'size': 'Único', 'quantity': 12, 'unitPrice': '0.79', 'lineTotal': '9.48', 'categoryLabel': 'Mini meia', 'categorySortOrder': 20, 'productSortOrder': 1},
+        {'ref': '4424a', 'name': 'Collant criança - tamanho 8', 'color': 'MARINHO', 'size': '8', 'quantity': 12, 'unitPrice': '2.00', 'lineTotal': '24.00', 'categoryLabel': 'Collants', 'categorySortOrder': 30, 'productSortOrder': 1},
+        {'ref': '4424b', 'name': 'Collant criança - tamanho 12', 'color': 'BRANCO', 'size': '12', 'quantity': 12, 'unitPrice': '2.00', 'lineTotal': '24.00', 'categoryLabel': 'Collants', 'categorySortOrder': 30, 'productSortOrder': 2},
     ]
     return {
         'id': 42,
@@ -28,11 +29,12 @@ def sample_order() -> dict:
         'customerPostalCode': '1000-100',
         'customerCity': 'Lisboa',
         'customerCountry': 'Portugal',
+        'customerCarrier': 'Transportes Exemplo, Lda.',
         'items': items,
         'lines': len(items),
         'units': sum(item['quantity'] for item in items),
-        'subtotal': '93.36',
-        'total': '93.36',
+        'subtotal': '91.44',
+        'total': '91.44',
         'notes': 'Entregar durante o período da manhã.\nConfirmar disponibilidade antes da expedição.',
     }
 

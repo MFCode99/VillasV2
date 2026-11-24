@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -10,6 +11,7 @@ from ..admin_business import AdminStatisticsService, ExcelExportService, Warning
 from ..authz import require_admin
 from ..config import get_settings
 from ..dependencies import get_db
+from ..models import Catalog
 from ..order_service import OrderService
 from ..services import AuthService, UserAdminService
 from .web import templates
@@ -20,6 +22,14 @@ order_service = OrderService()
 stats_service = AdminStatisticsService()
 warning_service = WarningService()
 excel_service = ExcelExportService()
+settings = get_settings()
+
+
+def _business_now() -> datetime:
+    try:
+        return datetime.now(ZoneInfo(settings.business_timezone))
+    except Exception:
+        return datetime.now(UTC)
 
 
 def _admin_shell_context(request: Request, user, db: Session) -> dict[str, object]:
@@ -91,9 +101,13 @@ def admin_statistics(
     request: Request,
     user=Depends(require_admin),
     db: Session = Depends(get_db),
-    year: int = Query(default=datetime.utcnow().year),
-    month: int = Query(default=datetime.utcnow().month, ge=1, le=12),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
 ):
+    if year is None or month is None:
+        current_period = _business_now()
+        year = year or current_period.year
+        month = month or current_period.month
     report = stats_service.monthly_report(db, year=year, month=month)
     return templates.TemplateResponse(
         request,
@@ -114,13 +128,27 @@ def admin_statistics_export(
     request: Request,
     user=Depends(require_admin),
     db: Session = Depends(get_db),
-    year: int = Query(default=datetime.utcnow().year),
-    month: int = Query(default=datetime.utcnow().month, ge=1, le=12),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    scope: str = Query(default='month', pattern='^(month|year)$'),
+    catalog: str | None = Query(default=None),
 ):
-    report = stats_service.monthly_report(db, year=year, month=month)
-    orders = order_service.list_admin_orders(db, limit=1000)
+    if year is None or month is None:
+        current_period = _business_now()
+        year = year or current_period.year
+        month = month or current_period.month
+    catalog_value = catalog.strip().casefold() if catalog else None
+    if catalog_value is not None and db.get(Catalog, catalog_value) is None:
+        raise HTTPException(status_code=400, detail='catalog_not_found')
+    if scope == 'year':
+        report = stats_service.annual_report(db, year=year, catalog=catalog_value)
+        orders = stats_service.year_detail(db, year=year, catalog=catalog_value)['orders']
+    else:
+        report = stats_service.monthly_report(db, year=year, month=month, catalog=catalog_value)
+        orders = stats_service.period_detail(db, year=year, month=month, catalog=catalog_value)['orders']
     payload = excel_service.build_stats_export(report=report, orders=orders)
-    filename = f'villas-stats-{year:04d}-{month:02d}.xlsx'
+    period_suffix = f'{year:04d}' if scope == 'year' else f'{year:04d}-{month:02d}'
+    filename = f'vitor-gouveia-stats-{catalog_value or "todos"}-{period_suffix}.xlsx'
     return Response(
         content=payload,
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

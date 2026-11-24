@@ -15,10 +15,8 @@ from .security import hash_csrf_token, hash_password, hash_session_token, needs_
 
 
 def landing_path_for_role(role: str) -> str:
-    if role == UserRole.ADMIN.value:
+    if role in {UserRole.ADMIN.value, UserRole.DEVELOPER.value}:
         return '/admin'
-    if role == UserRole.DEVELOPER.value:
-        return '/developer'
     return '/catalogo'
 
 
@@ -37,6 +35,16 @@ def _coerce_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {'1', 'true', 'yes', 'on'}
     return bool(value)
+
+
+def _coerce_email_list(values: list[str] | None, primary: str | None = None) -> list[str]:
+    primary_value = str(primary or '').strip().casefold()
+    result: list[str] = []
+    for value in values or []:
+        email = str(value or '').strip().casefold()
+        if email and '@' in email and email != primary_value and email not in result:
+            result.append(email)
+    return result[:10]
 
 
 def _normalize_role(role: str | None) -> str:
@@ -297,6 +305,14 @@ class UserAdminService:
         postal_code: str | None = None,
         city: str | None = None,
         country: str | None = None,
+        delivery_address_line1: str | None = None,
+        delivery_address_line2: str | None = None,
+        delivery_postal_code: str | None = None,
+        delivery_city: str | None = None,
+        delivery_country: str | None = None,
+        delivery_same_as_billing: bool = True,
+        additional_emails: list[str] | None = None,
+        carrier: str | None = None,
         active: bool = True,
         metadata_json: dict[str, Any] | None = None,
     ) -> User:
@@ -309,6 +325,12 @@ class UserAdminService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='password_required')
         if db.scalar(select(User.id).where(User.username == username_value)) is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='username_exists')
+        user_metadata = dict(metadata_json or {})
+        carrier_value = _coerce_optional_text(carrier)
+        if carrier_value:
+            user_metadata['carrier'] = carrier_value
+        user_metadata['additional_emails'] = _coerce_email_list(additional_emails, email)
+        user_metadata['delivery_same_as_billing'] = bool(delivery_same_as_billing)
         user = User(
             username=username_value,
             password_hash=hash_password(password),
@@ -323,8 +345,13 @@ class UserAdminService:
             postal_code=_coerce_optional_text(postal_code),
             city=_coerce_optional_text(city),
             country=_coerce_optional_text(country),
+            delivery_address_line1=_coerce_optional_text(delivery_address_line1),
+            delivery_address_line2=_coerce_optional_text(delivery_address_line2),
+            delivery_postal_code=_coerce_optional_text(delivery_postal_code),
+            delivery_city=_coerce_optional_text(delivery_city),
+            delivery_country=_coerce_optional_text(delivery_country),
             active=_coerce_bool(active),
-            metadata_json=metadata_json or {},
+            metadata_json=user_metadata,
         )
         db.add(user)
         db.commit()
@@ -346,6 +373,14 @@ class UserAdminService:
         postal_code: str | None = None,
         city: str | None = None,
         country: str | None = None,
+        delivery_address_line1: str | None = None,
+        delivery_address_line2: str | None = None,
+        delivery_postal_code: str | None = None,
+        delivery_city: str | None = None,
+        delivery_country: str | None = None,
+        delivery_same_as_billing: bool | None = None,
+        additional_emails: list[str] | None = None,
+        carrier: str | None = None,
         role: str | None = None,
         active: bool | None = None,
         admin_notes: str | None = None,
@@ -373,6 +408,31 @@ class UserAdminService:
             user.city = _coerce_optional_text(city)
         if country is not None:
             user.country = _coerce_optional_text(country)
+        if delivery_address_line1 is not None:
+            user.delivery_address_line1 = _coerce_optional_text(delivery_address_line1)
+        if delivery_address_line2 is not None:
+            user.delivery_address_line2 = _coerce_optional_text(delivery_address_line2)
+        if delivery_postal_code is not None:
+            user.delivery_postal_code = _coerce_optional_text(delivery_postal_code)
+        if delivery_city is not None:
+            user.delivery_city = _coerce_optional_text(delivery_city)
+        if delivery_country is not None:
+            user.delivery_country = _coerce_optional_text(delivery_country)
+        if additional_emails is not None or delivery_same_as_billing is not None:
+            metadata = dict(user.metadata_json or {})
+            if additional_emails is not None:
+                metadata['additional_emails'] = _coerce_email_list(additional_emails, email if email is not None else user.email)
+            if delivery_same_as_billing is not None:
+                metadata['delivery_same_as_billing'] = bool(delivery_same_as_billing)
+            user.metadata_json = metadata
+        if carrier is not None:
+            metadata = dict(user.metadata_json or {})
+            carrier_value = _coerce_optional_text(carrier)
+            if carrier_value:
+                metadata['carrier'] = carrier_value
+            else:
+                metadata.pop('carrier', None)
+            user.metadata_json = metadata
         if role is not None:
             user.role = _normalize_role(role)
         if active is not None:

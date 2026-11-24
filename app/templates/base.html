@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <meta name="csrf-token" content="{{ csrf_token or '' }}">
-    <meta name="apple-mobile-web-app-title" content="Villas">
-    <title>{{ title or 'Villas' }}</title>
-    <link rel="icon" type="image/svg+xml" href="/static/assets/villas-icon.svg?v=20260816-06">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/villas-touch-icon.svg?v=20260816-06">
+    <meta name="apple-mobile-web-app-title" content="Vitor Gouveia">
+    <title>{{ title or 'Vitor Gouveia' }}</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="/static/assets/vitor-gouveia-favicon.png?v=20261114-2">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/vitor-gouveia-apple-touch.png?v=20261114-2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/main.css?v=20260816-06">
+    <link rel="stylesheet" href="/static/css/main.css?v=20261107-3">
     <link rel="stylesheet" href="/static/css/admin.css?v=20260816-06">
     <link rel="stylesheet" href="/static/css/dev.css?v=20260816-06">
     <script defer src="https://unpkg.com/htmx.org@1.9.12"></script>
@@ -23,10 +23,7 @@
     {% if user %}
     <header class="site-header">
       <a class="brand" href="/catalogo" aria-label="Voltar ao catálogo">
-        <span class="brand-mark" aria-hidden="true">
-          <img src="/static/assets/villas-icon.svg?v=20260816-06" alt="" width="28" height="28">
-        </span>
-        <span class="brand-text">VILLAS</span>
+        <img class="brand-logo" src="/static/assets/vitor-gouveia-wordmark-white.png?v=20261114-1" alt="Vitor Gouveia">
       </a>
       <div class="header-actions">
         <details class="menu user-menu">
@@ -47,7 +44,7 @@
           </div>
         </details>
 
-        {% if user.role == 'admin' %}
+        {% if user.role in ['admin', 'developer'] %}
           <a class="quick-action quick-product" href="/admin/produtos">Novo produto</a>
           <details class="menu admin-menu">
             <summary class="menu-trigger admin-trigger">
@@ -64,6 +61,7 @@
               <a href="/admin/avisos">Avisos</a>
               <a href="/admin/estatisticas">Estatísticas</a>
               <a href="/admin/users">Utilizadores</a>
+              {% if user.role == 'developer' %}<a href="/developer">Painel técnico</a>{% endif %}
             </div>
           </details>
           <details class="menu tools-menu">
@@ -74,18 +72,7 @@
               <a href="/admin/estatisticas">Estatísticas</a>
               <a href="/admin/avisos">Avisos</a>
               <a href="/admin/users">Utilizadores</a>
-            </div>
-          </details>
-        {% elif user.role == 'developer' %}
-          <a class="quick-action quick-product quick-product-alt" href="/developer">Programador</a>
-          <details class="menu tools-menu">
-            <summary class="menu-trigger tools-trigger" aria-label="Ferramentas">
-              <span class="menu-pill menu-pill-tools">⚙</span>
-            </summary>
-            <div class="menu-panel">
-              <a href="/developer">Painel técnico</a>
-              <a href="/dashboard">Painel</a>
-              <a href="/catalogo">Catálogo</a>
+              {% if user.role == 'developer' %}<a href="/developer">Painel técnico</a>{% endif %}
             </div>
           </details>
         {% endif %}
@@ -107,7 +94,7 @@
               <a href="/me/encomendas">Minhas encomendas</a>
               <button type="button" data-cart-open>Encomenda</button>
             {% endif %}
-            {% if user.role == 'admin' %}
+            {% if user.role in ['admin', 'developer'] %}
               <a href="/admin">Dashboard</a>
               <a href="/admin/encomendas">Encomendas</a>
               <a href="/admin/encomendas/nova">Nova encomenda</a>
@@ -117,8 +104,7 @@
               <a href="/admin/avisos">Avisos</a>
               <a href="/admin/estatisticas">Estatísticas</a>
               <a href="/admin/users">Utilizadores</a>
-            {% elif user.role == 'developer' %}
-              <a href="/developer">Painel técnico</a>
+              {% if user.role == 'developer' %}<a href="/developer">Painel técnico</a>{% endif %}
             {% endif %}
             <form action="/logout" method="post" class="menu-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">

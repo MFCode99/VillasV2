@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 
 from app.db import SessionLocal
 from app.email_service import EmailService
-from app.models import Base, EmailDeliveryLog, Order, OrderRequestId, OrderStatusHistory, Product, User
-from app.order_service import OrderService
+from app.models import Base, Catalog, EmailDeliveryLog, Order, OrderRequestId, OrderStatusHistory, Product, User
+from app.order_service import OrderService, _next_public_order_number
 from app.pdf_service import build_order_pdf
 from app.services import UserAdminService
 
@@ -90,6 +90,43 @@ def _user_id(username: str) -> int:
         return user.id
 
 
+def test_utilities_unit_price_keeps_three_decimals_and_rounds_customer_totals():
+    ref = f'INT{uuid4().hex[:6]}'
+    with SessionLocal() as db:
+        if db.get(Catalog, 'interpilhas') is None:
+            db.add(Catalog(slug='interpilhas', label='Interpilhas', sort_order=10, active=True))
+        db.add(
+            Product(
+                ref=ref,
+                catalog_slug='interpilhas',
+                name='Produto Interpilhas',
+                product_type='Pilhas',
+                category_slug=None,
+                brand='Maxell',
+                price=Decimal('1.301'),
+                price_base=Decimal('1.301'),
+                eco_value=Decimal('0.000'),
+                pvp=None,
+                colors_json=[],
+                sizes_json=[],
+                sort_order=1,
+                active=True,
+                manual_active=True,
+                season='ambos',
+                quantity_step=1,
+                metadata_json={},
+            )
+        )
+        db.commit()
+        lines = OrderService()._hydrate_lines(db, [{'ref': ref, 'quantity': 10, 'color': '', 'size': ''}])
+
+    assert len(lines) == 1
+    assert lines[0].unit_price == Decimal('1.301')
+    assert lines[0].line_total == Decimal('13.01')
+    assert lines[0].snapshot_json['unit_price'] == '1.301'
+    assert lines[0].snapshot_json['catalog_slug'] == 'interpilhas'
+
+
 def test_order_submit_is_idempotent_and_clears_cart(client):
     client_name = f'client_{uuid4().hex}'
     ref = f'ORD{uuid4().hex[:6]}'
@@ -110,6 +147,8 @@ def test_order_submit_is_idempotent_and_clears_cart(client):
     assert payload['order']['publicNumber'].startswith('VLS-')
     assert payload['order']['units'] == 324
     assert payload['order']['lines'] == 1
+    assert payload['order']['notes'] == ''
+    assert payload['order']['internalNotes'] == ''
 
     retry = client.post(
         '/me/orders',
@@ -146,11 +185,58 @@ def test_client_order_requires_minimum_total(client):
     response = client.post(
         '/me/orders',
         headers={**_csrf_headers(client), 'Accept': 'application/json'},
-        json={'idempotency_key': 'order-below-minimum', 'cart_revision': 1},
+        json={'idempotency_key': 'order-below-minimum', 'cart_revision': 1, 'ignore_minimum_total': True},
     )
     assert response.status_code == 400
     assert response.json()['detail'] == 'minimum_order_total'
     assert client.get('/me/cart?output=json').json()['cart']['units'] == 12
+
+
+def test_admin_can_ignore_minimum_total_from_cart(client):
+    admin_name = f'admin_{uuid4().hex}'
+    ref = f'ORD{uuid4().hex[:6]}'
+    _create_user(username=admin_name, role='admin')
+    _create_product(ref)
+    _login(client, admin_name)
+    _add_item(client, ref, key='admin-below-minimum-add', quantity=12)
+
+    response = client.post(
+        '/me/orders',
+        headers={**_csrf_headers(client), 'Accept': 'application/json'},
+        json={'idempotency_key': 'admin-below-minimum-submit', 'cart_revision': 1, 'ignore_minimum_total': True},
+    )
+    assert response.status_code == 201
+    payload = response.json()['order']
+    assert Decimal(payload['total']) < Decimal('250.00')
+    assert payload['snapshot']['ignored_minimum_total'] is True
+
+
+def test_interpilhas_order_requires_300_euros_and_only_clears_its_cart(client):
+    client_name = f'client_{uuid4().hex}'
+    ref = f'INT{uuid4().hex[:6]}'
+    _create_user(username=client_name, role='client')
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == client_name))
+        user.metadata_json = {**(user.metadata_json or {}), 'catalog_access': ['villas', 'interpilhas']}
+        if db.get(Catalog, 'interpilhas') is None:
+            db.add(Catalog(slug='interpilhas', label='Interpilhas', sort_order=10, active=True))
+        db.add(Product(ref=ref, catalog_slug='interpilhas', name='Produto Interpilhas', product_type='Pilhas', price=Decimal('10.000'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}))
+        db.commit()
+    _login(client, client_name)
+    add = client.post('/me/cart/items', headers=_csrf_headers(client), json={'catalog_slug': 'interpilhas', 'idempotency_key': 'inter-min-add', 'cart_revision': 0, 'ref': ref, 'color': '', 'size': '', 'quantity': 29})
+    assert add.status_code == 200
+    item_id = add.json()['cart']['items'][0]['id']
+
+    below = client.post('/me/orders', headers={**_csrf_headers(client), 'Accept': 'application/json'}, json={'catalog_slug': 'interpilhas', 'idempotency_key': 'inter-min-below', 'cart_revision': 1})
+    assert below.status_code == 400
+    assert below.json()['detail'] == 'minimum_order_total_interpilhas'
+
+    updated = client.patch(f'/me/cart/items/{item_id}', headers=_csrf_headers(client), json={'catalog_slug': 'interpilhas', 'idempotency_key': 'inter-min-update', 'cart_revision': 1, 'quantity': 30})
+    assert updated.status_code == 200
+    created = client.post('/me/orders', headers={**_csrf_headers(client), 'Accept': 'application/json'}, json={'catalog_slug': 'interpilhas', 'idempotency_key': 'inter-min-ok', 'cart_revision': 2})
+    assert created.status_code == 201
+    assert created.json()['order']['catalogSlug'] == 'interpilhas'
+    assert client.get('/me/cart?output=json&catalog=interpilhas').json()['cart']['units'] == 0
 
 
 def test_admin_can_submit_own_cart_for_selected_client(client):
@@ -176,6 +262,51 @@ def test_admin_can_submit_own_cart_for_selected_client(client):
     payload = response.json()['order']
     assert payload['userId'] == _user_id(client_name)
     assert payload['origin'] == 'admin_cart'
+    assert payload['orderStatus'] == 'confirmed'
+    assert payload['confirmedAt']
+    assert client.get('/me/cart?output=json').json()['cart']['units'] == 0
+
+
+def test_admin_can_submit_own_cart_for_self_without_selecting_client(client):
+    admin_name = f'admin_{uuid4().hex}'
+    ref = f'ORD{uuid4().hex[:6]}'
+    _create_user(username=admin_name, role='admin')
+    _create_product(ref)
+    _login(client, admin_name)
+    _add_item(client, ref, key='admin-self-cart-add', quantity=324)
+    cart = client.get('/me/cart?output=json').json()['cart']
+    item_id = cart['items'][0]['id']
+    adjusted = client.patch(
+        f'/me/cart/items/{item_id}',
+        headers=_csrf_headers(client),
+        json={
+            'idempotency_key': 'admin-self-ignore-step',
+            'cart_revision': 1,
+            'quantity': 325,
+            'ignore_quantity_step': True,
+        },
+    )
+    assert adjusted.status_code == 200
+    assert adjusted.json()['cart']['units'] == 325
+
+    response = client.post(
+        '/me/orders',
+        headers={**_csrf_headers(client), 'Accept': 'application/json'},
+        json={
+            'idempotency_key': 'admin-self-cart-submit',
+            'cart_revision': 2,
+            'customer_user_id': None,
+            'ignore_quantity_step': True,
+        },
+    )
+    assert response.status_code == 201
+    payload = response.json()['order']
+    assert payload['userId'] == _user_id(admin_name)
+    assert payload['createdByUserId'] == _user_id(admin_name)
+    assert payload['orderStatus'] == 'confirmed'
+    assert payload['confirmedAt']
+    assert payload['units'] == 325
+    assert payload['snapshot']['ignored_quantity_step'] is True
     assert client.get('/me/cart?output=json').json()['cart']['units'] == 0
 
 
@@ -273,7 +404,7 @@ def test_email_service_marks_order_and_logs_delivery():
             related_user_id=user.id,
         )
         assert result.status == 'sent'
-        assert 'PORTAL COMERCIAL' in sent_messages[0].get_body(preferencelist=('html',)).get_content()
+        assert 'VITOR GOUVEIA' in sent_messages[0].get_body(preferencelist=('html',)).get_content()
         assert 'Ver encomenda' in sent_messages[0].get_body(preferencelist=('html',)).get_content()
         stored = db.scalar(select(Order).where(Order.id == order['id']))
         assert stored is not None
@@ -318,12 +449,109 @@ def test_order_pdf_has_distinct_priced_and_unpriced_documents():
     unpriced_text = '\n'.join(page.extract_text() or '' for page in unpriced.pages)
     assert 'NOTA DE ENCOMENDA' in priced_text
     assert 'PREÇO UNIT.' in priced_text
+    assert 'COR' in priced_text and 'TAM.' in priced_text
     assert '9,48' in priced_text
     assert 'GUIA DE PREPARAÇÃO' in unpriced_text
     assert 'DOCUMENTO SEM PREÇOS' in unpriced_text
+    assert 'VARIANTES' in unpriced_text
     assert 'PREÇO UNIT.' not in unpriced_text
     assert '9,48' not in unpriced_text
     assert '["' not in priced_text
+
+
+def test_order_pdf_groups_categories_references_and_variants():
+    items = [
+        {'ref': '2145', 'name': 'Mini meia', 'color': 'PRETO', 'size': 'Único', 'quantity': 12, 'unitPrice': '0.79', 'lineTotal': '9.48', 'categoryLabel': 'Mini meia', 'categorySortOrder': 20},
+        {'ref': '099', 'name': 'Soquete', 'color': 'BRANCO', 'size': '35-38', 'quantity': 12, 'unitPrice': '1.25', 'lineTotal': '15.00', 'categoryLabel': 'Soquetes', 'categorySortOrder': 10},
+        {'ref': '2145', 'name': 'Mini meia', 'color': 'MUSKADE', 'size': 'Único', 'quantity': 24, 'unitPrice': '0.79', 'lineTotal': '18.96', 'categoryLabel': 'Mini meia', 'categorySortOrder': 20},
+        {'ref': '4424a', 'name': 'Collant criança', 'color': 'MARINHO', 'size': '8', 'quantity': 12, 'unitPrice': '2.00', 'lineTotal': '24.00', 'categoryLabel': 'Collants', 'categorySortOrder': 30},
+        {'ref': '4424b', 'name': 'Collant criança', 'color': 'PRETO', 'size': '12', 'quantity': 12, 'unitPrice': '2.00', 'lineTotal': '24.00', 'categoryLabel': 'Collants', 'categorySortOrder': 30},
+    ]
+    order = {
+        'publicNumber': 'VLS-2026-000044', 'orderStatus': 'confirmed', 'customerName': 'Cliente PDF',
+        'customerCarrier': 'Transportadora Teste', 'items': items, 'lines': 5, 'units': 72,
+        'subtotal': '91.44', 'total': '91.44',
+    }
+    reader = PdfReader(BytesIO(build_order_pdf(order, hide_prices=True)))
+    text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+    assert text.index('SOQUETES') < text.index('MINI MEIA') < text.index('COLLANTS')
+    assert text.count('2145') == 1
+    assert 'PRETO' in text and 'MUSKADE' in text
+    assert '4424-8' in text and '4424-12' in text
+    assert '4424a' not in text and '4424b' not in text
+    assert 'Transportadora Teste' in text
+
+
+def test_priced_order_pdf_keeps_original_flat_table():
+    order = {
+        'publicNumber': 'VLS-2026-000045', 'orderStatus': 'confirmed', 'customerName': 'Cliente PDF',
+        'customerCarrier': 'Transportadora que não pertence ao modelo antigo',
+        'items': [
+            {'ref': '2145', 'name': 'Mini meia', 'color': 'PRETO', 'size': 'Único', 'quantity': 12, 'unitPrice': '0.79', 'lineTotal': '9.48', 'categoryLabel': 'Mini meia'},
+            {'ref': '2145', 'name': 'Mini meia', 'color': 'MUSKADE', 'size': 'Único', 'quantity': 24, 'unitPrice': '0.79', 'lineTotal': '18.96', 'categoryLabel': 'Mini meia'},
+        ],
+        'lines': 2, 'units': 36, 'subtotal': '28.44', 'total': '28.44',
+    }
+    reader = PdfReader(BytesIO(build_order_pdf(order)))
+    text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+    assert 'ARTIGOS POR CATEGORIA' not in text
+    assert text.count('2145') == 2
+    assert 'PREÇO UNIT.' in text
+    assert 'Transportadora que não pertence ao modelo antigo' not in text
+
+
+def test_no_price_pdf_layout_can_hide_blocks_and_product_name():
+    order = {
+        'publicNumber': 'VLS-2026-000046', 'orderStatus': 'confirmed', 'customerName': 'Cliente escondido',
+        'customerEmail': 'cliente@example.test', 'customerCarrier': 'Transportadora escondida',
+        'items': [{'ref': '099', 'name': 'Nome escondido', 'color': 'PRETO', 'size': 'M', 'quantity': 12, 'categoryLabel': 'Soquetes'}],
+        'lines': 1, 'units': 12, 'subtotal': '0', 'total': '0',
+    }
+    layout = {
+        'showCustomer': False, 'showContact': False, 'showCarrier': False,
+        'showProductName': False, 'showSummary': False, 'showCategories': False,
+        'blankColumn': True, 'fontSize': 'large',
+    }
+    reader = PdfReader(BytesIO(build_order_pdf(order, hide_prices=True, layout=layout)))
+    text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+    assert 'Cliente escondido' not in text
+    assert 'cliente@example.test' not in text
+    assert 'Transportadora escondida' not in text
+    assert 'Nome escondido' not in text
+    assert 'SOQUETES' not in text
+
+
+def test_order_pdf_does_not_render_internal_notes():
+    order = {
+        'id': 43, 'publicNumber': 'VLS-2026-000043', 'createdAt': '2026-08-16T15:30:00',
+        'orderStatus': 'confirmed', 'customerName': 'Cliente PDF', 'items': [],
+        'lines': 0, 'units': 0, 'subtotal': '0.00', 'total': '0.00',
+        'notes': 'Nota interna que nunca deve sair',
+        'internalNotes': 'Nota interna que nunca deve sair',
+    }
+    reader = PdfReader(BytesIO(build_order_pdf(order)))
+    text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+    assert 'Nota interna que nunca deve sair' not in text
+    assert 'NOTAS' not in text
+
+
+def test_public_order_number_skips_existing_sequence():
+    username = f'client_{uuid4().hex}'
+    _create_user(username=username, role='client')
+    with SessionLocal() as db:
+        existing = Order(
+            public_number='VLS-2026-000033',
+            request_id=f'existing-{uuid4().hex}',
+            user_id=_user_id(username),
+            customer_name='Cliente existente',
+            subtotal=Decimal('0.00'),
+            total=Decimal('0.00'),
+            units=0,
+            lines=0,
+        )
+        db.add(existing)
+        db.commit()
+        assert _next_public_order_number(db, 2026, 33) == 'VLS-2026-000034'
 
 
 def test_order_pdf_paginates_large_orders_and_repeats_table_header():
@@ -336,5 +564,29 @@ def test_order_pdf_paginates_large_orders_and_repeats_table_header():
     assert len(reader.pages) >= 3
     for page in reader.pages:
         text = page.extract_text() or ''
-        assert 'VILLAS' in text
+        assert 'VITOR GOUVEIA' in text
         assert 'Página' in text
+
+
+def test_utilities_order_pdf_uses_public_catalog_name_without_supplier():
+    order = {
+        'id': 100,
+        'publicNumber': 'VLS-2026-000100',
+        'catalogSlug': 'interpilhas',
+        'orderStatus': 'confirmed',
+        'customerName': 'Cliente Utilidades',
+        'items': [{'ref': 'BAT-1', 'name': 'Pilha', 'quantity': 30, 'unitPrice': '10.000', 'lineTotal': '300.00', 'catalogSlug': 'interpilhas'}],
+        'lines': 1,
+        'units': 30,
+        'subtotal': '300.00',
+        'total': '300.00',
+    }
+    text = '\n'.join((page.extract_text() or '') for page in PdfReader(BytesIO(build_order_pdf(order))).pages)
+    no_price_text = '\n'.join((page.extract_text() or '') for page in PdfReader(BytesIO(build_order_pdf(order, hide_prices=True))).pages)
+    normalized_text = text.upper()
+    assert 'NOTA DE ENCOMENDA - UTILIDADES' in normalized_text
+    assert 'VITOR GOUVEIA' in normalized_text
+    assert 'INTERPILHAS' not in normalized_text
+    assert 'COR' not in normalized_text and 'TAM.' not in normalized_text
+    assert 'VARIANTES' not in no_price_text.upper()
+    assert '- · -' not in no_price_text

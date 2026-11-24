@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.catalog import CatalogService, normalize_season, split_csv_values, to_decimal
-from app.models import Base, Category, Product
+from app.models import Base, Catalog, Category, Product
 
 
 def _session(tmp_path):
@@ -87,3 +87,26 @@ def test_catalog_service_filters_and_counts(tmp_path):
     page = service.list_products(db, include_inactive=True, season='inverno')
     assert page.total == 1
     assert page.items[0].ref == '6969'
+
+
+def test_catalog_service_separates_catalogs_and_includes_child_categories(tmp_path):
+    db = _session(tmp_path)
+    db.add_all([
+        Catalog(slug='villas', label='Villas', sort_order=0, active=True),
+        Catalog(slug='interpilhas', label='Interpilhas', sort_order=10, active=True),
+        Category(slug='meias', catalog_slug='villas', label='Meias', sort_order=0, active=True, visible_on_site=True),
+        Category(slug='interpilhas-pilhas', catalog_slug='interpilhas', label='Pilhas', sort_order=10, active=True, visible_on_site=True),
+        Category(slug='interpilhas-pilhas-litio', catalog_slug='interpilhas', parent_slug='interpilhas-pilhas', label='Lítio', sort_order=11, active=True, visible_on_site=True),
+        Product(ref='V-1', catalog_slug='villas', name='Meia Villas', product_type='Meia', category_slug='meias', price=Decimal('1.00'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}),
+        Product(ref='I-1', catalog_slug='interpilhas', name='Pilha CR2032', product_type='Pilha', category_slug='interpilhas-pilhas-litio', brand='VARTA', family='Lítio', ean='4008496276882', price=Decimal('1.05'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}),
+    ])
+    db.commit()
+
+    service = CatalogService()
+    assert [item.slug for item in service.list_catalogs(db)] == ['villas', 'interpilhas']
+    assert service.list_products(db, catalog='villas').items[0].ref == 'V-1'
+    interpilhas = service.list_products(db, catalog='interpilhas', category='interpilhas-pilhas', brand='varta', family='lítio')
+    assert interpilhas.total == 1
+    assert interpilhas.items[0].ref == 'I-1'
+    assert service.list_products(db, catalog='interpilhas', q='4008496276882').total == 1
+    assert [item.slug for item in service.list_categories(db, catalog='interpilhas')] == ['interpilhas-pilhas', 'interpilhas-pilhas-litio']

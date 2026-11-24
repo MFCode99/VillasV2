@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
 from .models import EmailDeliveryLog, EmailTemplate, Order, User
+from .pdf_layout import get_pdf_layout
 from .pdf_service import build_order_pdf
 from .security import utcnow
 
@@ -39,14 +40,14 @@ def _email_shell(*, eyebrow: str, title: str, content: str, button_label: str, b
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 12px 35px rgba(23,36,61,.10)">
         <tr><td style="background:#17243d;padding:26px 32px">
           <table role="presentation" width="100%"><tr>
-            <td style="width:52px"><div style="width:44px;height:44px;line-height:44px;text-align:center;border-radius:12px;background:#c6a15b;color:#17243d;font-size:22px;font-weight:800">V</div></td>
-            <td><div style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:.4px">VILLAS</div></td>
+            <td style="width:52px"><div style="width:44px;height:44px;line-height:44px;text-align:center;border-radius:12px;background:#c6a15b;color:#17243d;font-size:18px;font-weight:800">VG</div></td>
+            <td><div style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:.4px">VITOR GOUVEIA</div></td>
           </tr></table>
         </td></tr>
         <tr><td style="padding:34px 32px 12px"><div style="color:#b4893f;font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase">{eyebrow}</div><h1 style="margin:8px 0 0;color:#17243d;font-size:28px;line-height:1.25">{title}</h1></td></tr>
         <tr><td style="padding:8px 32px 12px;font-size:15px;line-height:1.65">{content}</td></tr>
         <tr><td style="padding:16px 32px 36px"><a href="{button_url}" style="display:inline-block;background:#17243d;color:#ffffff;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:10px">{button_label}</a></td></tr>
-        <tr><td style="border-top:1px solid #e2e6ed;padding:20px 32px;color:#7a8392;font-size:12px;line-height:1.5">Mensagem automática da Villas.<br>Se tiver alguma questão, responda a este email.</td></tr>
+        <tr><td style="border-top:1px solid #e2e6ed;padding:20px 32px;color:#7a8392;font-size:12px;line-height:1.5">Mensagem automática de Vitor Gouveia.<br>Se tiver alguma questão, responda a este email.</td></tr>
       </table>
     </td></tr>
   </table>
@@ -93,13 +94,59 @@ class EmailService:
             except Exception:
                 pass
 
+    def send_system_alert(self, db: Session, *, recipients: list[str], issues: list[str], recovered: bool = False) -> EmailSendResult:
+        recipients = list(dict.fromkeys(str(value or '').strip().casefold() for value in recipients if '@' in str(value or '')))
+        sender = self.settings.smtp_from or self.settings.smtp_user or 'noreply@example.test'
+        title = 'Serviços recuperados' if recovered else 'Alerta de monitorização'
+        subject = f'Vitor Gouveia — {title}'
+        details = ''.join(f'<li style="margin:8px 0">{html_escape(item)}</li>' for item in issues)
+        body_text = title + '\n\n' + '\n'.join(f'- {item}' for item in issues)
+        body_html = _email_shell(
+            eyebrow='Monitorização automática', title=title,
+            content=f'<p>{"Todos os controlos voltaram ao normal." if recovered else "Foram detetadas situações que precisam de atenção:"}</p><ul style="padding-left:20px">{details}</ul>',
+            button_label='Abrir o portal', button_url=html_escape(self.settings.public_url, quote=True),
+        )
+        log = EmailDeliveryLog(
+            template_name='system_monitor_recovery' if recovered else 'system_monitor_alert', request_id=None,
+            attempt=1, recipient=', '.join(recipients), subject=subject, status='pending',
+            payload_json=_json_safe({'event': 'system_monitor', 'recovered': recovered, 'issues': issues}),
+        )
+        db.add(log); db.commit(); db.refresh(log)
+        if not recipients or not self.settings.smtp_host:
+            log.status = 'failed'; log.error_message = 'smtp_not_configured' if not self.settings.smtp_host else 'recipient_missing'; db.commit()
+            return EmailSendResult(status='failed', error_message=log.error_message)
+        message = EmailMessage()
+        message['From'] = sender; message['To'] = ', '.join(recipients); message['Subject'] = subject
+        message.set_content(body_text); message.add_alternative(body_html, subtype='html')
+        client = None
+        try:
+            client = self.transport_factory(self.settings)
+            result = client.send_message(message)
+            log.status = 'sent'; log.provider_message_id = str(result or ''); log.error_message = None; db.commit()
+            return EmailSendResult(status='sent', provider_message_id=log.provider_message_id)
+        except Exception as exc:
+            log.status = 'failed'; log.error_message = str(exc); db.commit()
+            return EmailSendResult(status='failed', error_message=str(exc))
+        finally:
+            try:
+                if client is not None: client.quit()
+            except Exception:
+                pass
+
+    @staticmethod
+    def user_recipients(user: User) -> list[str]:
+        values = [user.email, *list((user.metadata_json or {}).get('additional_emails') or [])]
+        recipients: list[str] = []
+        for value in values:
+            text = str(value or '').strip().casefold()
+            if text and '@' in text and text not in recipients:
+                recipients.append(text)
+        return recipients
+
     def _default_recipients(self, order: dict[str, Any]) -> list[str]:
         recipients: list[str] = []
-        for value in [
-            order.get('customerEmail') or order.get('customer_email'),
-            self.settings.smtp_from,
-            self.settings.smtp_user,
-        ]:
+        customer_emails = list(order.get('customerEmails') or order.get('customer_emails') or [])
+        for value in [order.get('customerEmail') or order.get('customer_email'), *customer_emails, self.settings.smtp_from, self.settings.smtp_user]:
             text = str(value or '').strip()
             if text and text not in recipients:
                 recipients.append(text)
@@ -163,6 +210,8 @@ class EmailService:
         body_text: str,
         order: dict[str, Any],
         hide_prices: bool = False,
+        no_price_layout: dict[str, Any] | None = None,
+        priced_layout: dict[str, Any] | None = None,
     ) -> EmailMessage:
         message = EmailMessage()
         message['From'] = sender
@@ -171,8 +220,8 @@ class EmailService:
         message.set_content(body_text)
         message.add_alternative(body_html, subtype='html')
         attachments = [
-            (f"{order.get('publicNumber') or order.get('public_number')}.pdf", build_order_pdf(order, hide_prices=hide_prices)),
-            (f"{order.get('publicNumber') or order.get('public_number')}_sem_precos.pdf", build_order_pdf(order, hide_prices=True)),
+            (f"{order.get('publicNumber') or order.get('public_number')}.pdf", build_order_pdf(order, layout=priced_layout)),
+            (f"{order.get('publicNumber') or order.get('public_number')}_sem_precos.pdf", build_order_pdf(order, hide_prices=True, layout=no_price_layout)),
         ]
         for filename, pdf_bytes in attachments:
             message.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=filename)
@@ -224,6 +273,8 @@ class EmailService:
             body_html=body_html,
             body_text=body_text,
             order=order,
+            no_price_layout=get_pdf_layout(db, user_id=order.get('userId')),
+            priced_layout=get_pdf_layout(db, kind='priced', user_id=order.get('userId')),
         )
 
         client = None
@@ -265,13 +316,13 @@ class EmailService:
         db: Session,
         *,
         order: dict[str, Any],
-        recipient: str,
+        recipients: list[str],
         hide_prices: bool,
         request_id: str | None,
         related_user_id: int | None = None,
     ) -> EmailSendResult:
         """Send one selected version of an order PDF to the customer's email."""
-        recipient = recipient.strip()
+        recipients = [str(value or '').strip() for value in recipients if str(value or '').strip()]
         public_number = str(order.get('publicNumber') or order.get('public_number') or '')
         sender = self.settings.smtp_from or self.settings.smtp_user or 'noreply@example.test'
         document_name = 'guia de preparação sem preços' if hide_prices else 'nota de encomenda com preços'
@@ -291,18 +342,21 @@ class EmailService:
         log = EmailDeliveryLog(
             related_order_id=order.get('id'), related_user_id=related_user_id or order.get('userId'),
             template_name='order_pdf_unpriced' if hide_prices else 'order_pdf_priced', request_id=request_id,
-            attempt=1, recipient=recipient, subject=subject, status='pending',
+            attempt=1, recipient=', '.join(recipients), subject=subject, status='pending',
             payload_json=_json_safe({'event': 'order_pdf', 'hide_prices': hide_prices, 'order_id': order.get('id')}),
         )
         db.add(log); db.commit(); db.refresh(log)
-        if not recipient or not self.settings.smtp_host:
+        if not recipients or not self.settings.smtp_host:
             log.status = 'failed'; log.error_message = 'smtp_not_configured' if not self.settings.smtp_host else 'user_email_missing'; db.commit()
             return EmailSendResult(status='failed', error_message=log.error_message)
         message = EmailMessage()
-        message['From'] = sender; message['To'] = recipient; message['Subject'] = subject
+        message['From'] = sender; message['To'] = ', '.join(recipients); message['Subject'] = subject
         message.set_content(body_text); message.add_alternative(body_html, subtype='html')
         filename = f'{public_number}_sem_precos.pdf' if hide_prices else f'{public_number}.pdf'
-        message.add_attachment(build_order_pdf(order, hide_prices=hide_prices), maintype='application', subtype='pdf', filename=filename)
+        message.add_attachment(
+            build_order_pdf(order, hide_prices=hide_prices, layout=get_pdf_layout(db, kind='no_prices' if hide_prices else 'priced', user_id=order.get('userId'))),
+            maintype='application', subtype='pdf', filename=filename,
+        )
         client = None
         try:
             client = self.transport_factory(self.settings)
@@ -323,15 +377,15 @@ class EmailService:
     def send_user_created(self, db: Session, *, user: User, password: str, request_id: str | None) -> EmailSendResult:
         recipient = str(user.email or '').strip()
         sender = self.settings.smtp_from or self.settings.smtp_user or 'noreply@example.test'
-        subject = 'Bem-vindo à Villas'
+        subject = 'Bem-vindo ao portal Vitor Gouveia'
         body_text = (
-            f'Olá {user.full_name},\n\nA sua conta na Villas foi criada.\n\n'
+            f'Olá {user.full_name},\n\nA sua conta no portal Vitor Gouveia foi criada.\n\n'
             f'Utilizador: {user.username}\nPassword: {password}\n\n'
             f'Aceda ao portal em: {self.settings.public_url}\n'
         )
         body_html = _email_shell(
             eyebrow='Conta criada',
-            title='Bem-vindo à Villas',
+            title='Bem-vindo ao portal Vitor Gouveia',
             content=(
                 f'<p style="margin:0 0 18px">Olá <b>{html_escape(user.full_name)}</b>,</p>'
                 '<p>A sua conta foi criada. Utilize os dados abaixo para entrar:</p>'

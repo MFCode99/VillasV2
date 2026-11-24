@@ -15,10 +15,10 @@ from typing import Any, Iterable, Mapping
 
 from sqlalchemy import create_engine, func, or_, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from .config import Settings
-from .models import Category, Product
+from .models import Catalog, Category, Product
 
 MONEY_QUANT = Decimal('0.01')
 VALID_SEASONS = {'ambos', 'inverno', 'verao'}
@@ -215,11 +215,39 @@ class ValidationSummary:
 
 
 class CatalogService:
-    def list_categories(self, db: Session, *, include_inactive: bool = False) -> list[Category]:
+    def list_catalogs(self, db: Session, *, include_inactive: bool = False) -> list[Catalog]:
+        stmt = select(Catalog).order_by(Catalog.sort_order.asc(), Catalog.label.asc())
+        if not include_inactive:
+            stmt = stmt.where(Catalog.active.is_(True))
+        return list(db.execute(stmt).scalars().all())
+
+    def list_categories(
+        self,
+        db: Session,
+        *,
+        catalog: str | None = None,
+        include_inactive: bool = False,
+    ) -> list[Category]:
         stmt = select(Category).order_by(Category.sort_order.asc(), Category.label.asc())
+        if catalog:
+            stmt = stmt.where(Category.catalog_slug == normalize_reference(catalog).casefold())
         if not include_inactive:
             stmt = stmt.where(Category.active.is_(True))
-        return list(db.execute(stmt).scalars().all())
+        items = list(db.execute(stmt).scalars().all())
+        if include_inactive:
+            return items
+        active_slugs = {item.slug for item in items}
+        return [item for item in items if item.parent_slug is None or item.parent_slug in active_slugs]
+
+    def filter_options(self, db: Session, *, catalog: str) -> dict[str, list[str]]:
+        catalog_value = normalize_reference(catalog).casefold() or 'villas'
+        base = (Product.catalog_slug == catalog_value, Product.active.is_(True), Product.manual_active.is_(True), Product.gift_only.is_(False))
+        brands = db.scalars(select(Product.brand).where(*base, Product.brand.is_not(None), Product.brand != '').distinct().order_by(Product.brand.asc())).all()
+        families = db.scalars(select(Product.family).where(*base, Product.family.is_not(None), Product.family != '').distinct().order_by(Product.family.asc())).all()
+        return {
+            'brands': [str(value) for value in brands],
+            'families': [str(value) for value in families],
+        }
 
     def list_products(
         self,
@@ -227,7 +255,11 @@ class CatalogService:
         *,
         q: str | None = None,
         ref: str | None = None,
+        catalog: str | None = 'villas',
         category: str | None = None,
+        subcategory: str | None = None,
+        brand: str | None = None,
+        family: str | None = None,
         season: str | None = None,
         sort: str | None = None,
         include_inactive: bool = False,
@@ -236,10 +268,21 @@ class CatalogService:
     ) -> CatalogPage:
         page = max(1, int(page or 1))
         per_page = max(1, min(int(per_page or 24), 5000 if include_inactive else 100))
-        stmt = select(Product).options(selectinload(Product.category))
+        stmt = select(Product).options(selectinload(Product.catalog), selectinload(Product.category).selectinload(Category.parent))
         stmt = stmt.join(Category, Product.category_slug == Category.slug, isouter=True)
-        if category:
-            stmt = stmt.where(Product.category_slug == normalize_reference(category))
+        catalog_value = normalize_reference(catalog).casefold() if catalog else ''
+        if catalog_value:
+            stmt = stmt.where(Product.catalog_slug == catalog_value)
+        if subcategory:
+            stmt = stmt.where(Product.category_slug == normalize_reference(subcategory))
+        elif category:
+            category_value = normalize_reference(category)
+            child_slugs = list(db.scalars(select(Category.slug).where(Category.parent_slug == category_value)).all())
+            stmt = stmt.where(Product.category_slug.in_([category_value, *child_slugs]))
+        if brand:
+            stmt = stmt.where(func.lower(Product.brand) == normalize_text(brand).casefold())
+        if family:
+            stmt = stmt.where(func.lower(Product.family) == normalize_text(family).casefold())
         if season:
             stmt = stmt.where(Product.season == normalize_season(season))
         if ref:
@@ -252,11 +295,20 @@ class CatalogService:
                     Product.ref.ilike(query),
                     Product.name.ilike(query),
                     Product.product_type.ilike(query),
+                    Product.brand.ilike(query),
+                    Product.family.ilike(query),
+                    Product.ean.ilike(query),
                 )
             )
         if not include_inactive:
-            stmt = stmt.where(Product.active.is_(True), Product.manual_active.is_(True))
-            stmt = stmt.where(or_(Product.category_slug.is_(None), Category.active.is_(True)))
+            stmt = stmt.where(Product.active.is_(True), Product.manual_active.is_(True), Product.gift_only.is_(False))
+            ParentCategory = aliased(Category)
+            valid_categories = (
+                select(Category.slug)
+                .outerjoin(ParentCategory, Category.parent_slug == ParentCategory.slug)
+                .where(Category.active.is_(True), or_(Category.parent_slug.is_(None), ParentCategory.active.is_(True)))
+            )
+            stmt = stmt.where(or_(Product.category_slug.is_(None), Product.category_slug.in_(valid_categories)))
         total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
         sort_value = (sort or 'ref_asc').strip().casefold()
         order_map = {
@@ -276,22 +328,30 @@ class CatalogService:
         items = list(db.execute(stmt).scalars().all())
         return CatalogPage(items=items, total=total, page=page, per_page=per_page)
 
-    def get_product(self, db: Session, ref: str) -> Product | None:
-        stmt = select(Product).options(selectinload(Product.category)).where(Product.ref == normalize_reference(ref))
+    def get_product(self, db: Session, ref: str, *, catalog: str | None = None) -> Product | None:
+        stmt = select(Product).options(selectinload(Product.catalog), selectinload(Product.category).selectinload(Category.parent)).where(Product.ref == normalize_reference(ref))
+        if catalog:
+            stmt = stmt.where(Product.catalog_slug == normalize_reference(catalog).casefold())
         return db.scalar(stmt)
 
-    def catalog_counts(self, db: Session) -> dict[str, int]:
-        total_products = db.scalar(select(func.count(Product.ref))) or 0
+    def catalog_counts(self, db: Session, *, catalog: str | None = None) -> dict[str, int]:
+        product_filters = []
+        category_filters = []
+        if catalog:
+            catalog_value = normalize_reference(catalog).casefold()
+            product_filters.append(Product.catalog_slug == catalog_value)
+            category_filters.append(Category.catalog_slug == catalog_value)
+        total_products = db.scalar(select(func.count(Product.ref)).where(*product_filters)) or 0
         active_products = db.scalar(
-            select(func.count(Product.ref)).where(Product.active.is_(True), Product.manual_active.is_(True))
+            select(func.count(Product.ref)).where(*product_filters, Product.active.is_(True), Product.manual_active.is_(True))
         ) or 0
-        total_categories = db.scalar(select(func.count(Category.slug))) or 0
-        active_categories = db.scalar(select(func.count(Category.slug)).where(Category.active.is_(True))) or 0
-        winter_products = db.scalar(select(func.count(Product.ref)).where(Product.season == 'inverno')) or 0
-        summer_products = db.scalar(select(func.count(Product.ref)).where(Product.season == 'verao')) or 0
-        all_season_products = db.scalar(select(func.count(Product.ref)).where(Product.season == 'ambos')) or 0
-        step_1_products = db.scalar(select(func.count(Product.ref)).where(func.coalesce(Product.quantity_step, 12) == 1)) or 0
-        step_12_products = db.scalar(select(func.count(Product.ref)).where(func.coalesce(Product.quantity_step, 12) == 12)) or 0
+        total_categories = db.scalar(select(func.count(Category.slug)).where(*category_filters)) or 0
+        active_categories = db.scalar(select(func.count(Category.slug)).where(*category_filters, Category.active.is_(True))) or 0
+        winter_products = db.scalar(select(func.count(Product.ref)).where(*product_filters, Product.season == 'inverno')) or 0
+        summer_products = db.scalar(select(func.count(Product.ref)).where(*product_filters, Product.season == 'verao')) or 0
+        all_season_products = db.scalar(select(func.count(Product.ref)).where(*product_filters, Product.season == 'ambos')) or 0
+        step_1_products = db.scalar(select(func.count(Product.ref)).where(*product_filters, func.coalesce(Product.quantity_step, 12) == 1)) or 0
+        step_12_products = db.scalar(select(func.count(Product.ref)).where(*product_filters, func.coalesce(Product.quantity_step, 12) == 12)) or 0
         return {
             'totalProducts': total_products,
             'activeProducts': active_products,

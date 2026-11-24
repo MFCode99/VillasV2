@@ -35,6 +35,17 @@ def test_login_redirects_by_role(client):
     assert response.cookies.get('villas_v2_csrf')
 
 
+def test_legacy_developer_redirects_to_admin_and_has_full_admin_access(client):
+    username = f'developer_{uuid4().hex}'
+    _create_user(username=username, password='secret123', role='developer')
+
+    response = client.post('/entrar', data={'username': username, 'password': 'secret123'}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers['location'] == '/admin'
+    assert client.get('/admin/clientes').status_code == 200
+
+
 def test_logout_requires_csrf_after_login(client):
     username = f'client_{uuid4().hex}'
     _create_user(username=username, password='secret123', role='client')

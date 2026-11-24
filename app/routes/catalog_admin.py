@@ -37,7 +37,7 @@ def _require_admin_csrf(request: Request, csrf_token: str) -> None:
     AuthService().validate_csrf_submission(request, csrf_token)
 
 
-def _save_product(db: Session, *, ref: str, name: str, product_type: str, category_slug: str | None, price: str, pvp: str | None, colors: str | None, sizes: str | None, season: str | None, qtd_step: int, sort_order: int, active: bool, manual_active: bool, description: str | None, image_payload: tuple[str, str, str] | None, updating: Product | None = None) -> Product:
+def _save_product(db: Session, *, ref: str, name: str, product_type: str, category_slug: str | None, price: str, pvp: str | None, colors: str | None, sizes: str | None, season: str | None, qtd_step: int, sort_order: int, active: bool, manual_active: bool, description: str | None, image_payload: tuple[str, str, str, float] | None, updating: Product | None = None) -> Product:
     ref_value = normalize_reference(ref)
     if not ref_value:
         raise HTTPException(status_code=400, detail='ref_required')
@@ -77,13 +77,15 @@ def _save_product(db: Session, *, ref: str, name: str, product_type: str, catego
     if description is not None:
         product.description = description.strip() or None
     if image_payload is not None:
-        image_path, checksum, mime_type = image_payload
+        image_path, checksum, mime_type, image_zoom = image_payload
         product.image_path = image_path
         product.image_checksum = checksum
         product.image_mime_type = mime_type
-    if not product.metadata_json:
-        product.metadata_json = {}
-    product.metadata_json.update({'source': 'admin'})
+    metadata = dict(product.metadata_json or {})
+    metadata['source'] = 'admin'
+    if image_payload is not None:
+        metadata.update({'image_zoom': image_zoom, 'image_framing_version': 1})
+    product.metadata_json = metadata
     db.commit()
     db.refresh(product)
     return product

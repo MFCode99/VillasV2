@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from app.cart_service import CartService
 from app.db import SessionLocal, TestEngine
-from app.models import Base, Cart, CartItem, CartOperation, Product, User
+from app.models import Base, Cart, CartItem, CartOperation, Catalog, Product, User
 from app.services import UserAdminService
 
 
@@ -103,6 +103,41 @@ def _cart_state(user_id: int) -> dict[str, object]:
     service = CartService()
     with SessionLocal() as db:
         return service.get_cart(db, user_id)
+
+
+def test_catalog_carts_are_isolated_with_independent_revisions(client):
+    username = f'client_{uuid4().hex}'
+    villas_ref = f'VIL{uuid4().hex[:6]}'
+    interpilhas_ref = f'INT{uuid4().hex[:6]}'
+    _create_client(username)
+    _create_product(villas_ref, step=1)
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == username))
+        user.metadata_json = {**(user.metadata_json or {}), 'catalog_access': ['villas', 'interpilhas']}
+        if db.get(Catalog, 'interpilhas') is None:
+            db.add(Catalog(slug='interpilhas', label='Interpilhas', sort_order=10, active=True))
+        db.add(Product(ref=interpilhas_ref, catalog_slug='interpilhas', name='Pilha teste', product_type='Pilha', price=Decimal('10.000'), colors_json=[], sizes_json=[], active=True, manual_active=True, season='ambos', quantity_step=1, metadata_json={}))
+        db.commit()
+    _login(client, username)
+
+    villas_add = _add_item(client, villas_ref, key='split-villas-1', color='PRETO', size='M', quantity=1, extra={'catalog_slug': 'villas'})
+    interpilhas_add = _add_item(client, interpilhas_ref, key='split-inter-1', color='', size='', quantity=30, revision=0, extra={'catalog_slug': 'interpilhas'})
+    assert villas_add.status_code == 200
+    assert interpilhas_add.status_code == 200
+    assert villas_add.json()['cart']['revision'] == 1
+    assert interpilhas_add.json()['cart']['revision'] == 1
+
+    villas_cart = client.get('/me/cart?output=json&catalog=villas').json()['cart']
+    interpilhas_cart = client.get('/me/cart?output=json&catalog=interpilhas').json()['cart']
+    assert [item['ref'] for item in villas_cart['items']] == [villas_ref]
+    assert [item['ref'] for item in interpilhas_cart['items']] == [interpilhas_ref]
+    assert villas_cart['minimum_total'] == '250.00'
+    assert interpilhas_cart['minimum_total'] == '300.00'
+
+    second_villas = _add_item(client, villas_ref, key='split-villas-2', color='PRETO', size='M', quantity=1, revision=1, extra={'catalog_slug': 'villas'})
+    assert second_villas.status_code == 200
+    assert second_villas.json()['cart']['revision'] == 2
+    assert client.get('/me/cart?output=json&catalog=interpilhas').json()['cart']['revision'] == 1
 
 
 def test_cart_add_is_idempotent_and_quantity_step(client):
@@ -204,6 +239,16 @@ def test_cart_rejects_invalid_variant_and_step(client):
     bad_step = _add_item(client, ref, key='bad-step', quantity=13)
     assert bad_step.status_code == 400
     assert bad_step.json()['detail'] == 'invalid_quantity_step'
+
+    valid = _add_item(client, ref, key='valid-step', quantity=12)
+    item_id = valid.json()['cart']['items'][0]['id']
+    client_override = client.patch(
+        f'/me/cart/items/{item_id}',
+        headers=_csrf_headers(client),
+        json={'idempotency_key': 'client-ignore-step', 'cart_revision': 1, 'quantity': 13, 'ignore_quantity_step': True},
+    )
+    assert client_override.status_code == 400
+    assert client_override.json()['detail'] == 'invalid_quantity_step'
 
 
 def test_cart_mutations_require_csrf(client):

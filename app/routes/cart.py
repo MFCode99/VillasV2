@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from ..authz import require_client_or_above
 from ..cart_service import CartService
+from ..cart_catalog import normalize_cart_catalog
+from ..catalog_access import can_access_catalog
 from ..dependencies import get_db
 from ..config import get_settings
 from ..services import AuthService
@@ -24,8 +26,16 @@ def _wants_json(request: Request, output: str | None = None) -> bool:
     return 'application/json' in accept.lower()
 
 
-def _cart_context(request: Request, user, db: Session) -> dict[str, object]:
-    cart = service.get_cart(db, user.id)
+def _allowed_catalog(user, value: str | None) -> str:
+    catalog_slug = normalize_cart_catalog(value)
+    if not can_access_catalog(user, catalog_slug):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail='catalog_forbidden')
+    return catalog_slug
+
+
+def _cart_context(request: Request, user, db: Session, catalog_slug: str) -> dict[str, object]:
+    cart = service.get_cart(db, user.id, catalog_slug)
     return {
         'user': user,
         'csrf_token': request.cookies.get('villas_v2_csrf', ''),
@@ -38,13 +48,15 @@ def _cart_context(request: Request, user, db: Session) -> dict[str, object]:
 def cart_get(
     request: Request,
     output: str | None = Query(default=None),
+    catalog: str = Query(default='villas'),
     user=Depends(require_client_or_above),
     db: Session = Depends(get_db),
 ):
-    cart = service.get_cart(db, user.id)
+    catalog_slug = _allowed_catalog(user, catalog)
+    cart = service.get_cart(db, user.id, catalog_slug)
     if _wants_json(request, output):
         return JSONResponse({'ok': True, 'cart': cart})
-    return templates.TemplateResponse(request, 'cart.html', _cart_context(request, user, db))
+    return templates.TemplateResponse(request, 'cart.html', _cart_context(request, user, db, catalog_slug))
 
 
 @router.put('/me/cart')
@@ -55,12 +67,14 @@ def cart_replace(
     db: Session = Depends(get_db),
 ):
     auth.validate_csrf_submission(request, request.headers.get('X-CSRF-Token') or payload.csrf_token)
+    catalog_slug = _allowed_catalog(user, payload.catalog_slug)
     cart = service.replace_cart(
         db,
         user_id=user.id,
         idempotency_key=payload.idempotency_key,
         items=[item.model_dump() for item in payload.items],
         expected_revision=payload.cart_revision,
+        catalog_slug=catalog_slug,
     )
     return JSONResponse({'ok': True, 'cart': cart})
 
@@ -73,11 +87,13 @@ def cart_clear(
     db: Session = Depends(get_db),
 ):
     auth.validate_csrf_submission(request, request.headers.get('X-CSRF-Token') or payload.csrf_token)
+    catalog_slug = _allowed_catalog(user, payload.catalog_slug)
     cart = service.clear_cart(
         db,
         user_id=user.id,
         idempotency_key=payload.idempotency_key,
         expected_revision=payload.cart_revision,
+        catalog_slug=catalog_slug,
     )
     return JSONResponse({'ok': True, 'cart': cart})
 
@@ -90,6 +106,7 @@ def cart_add_item(
     db: Session = Depends(get_db),
 ):
     auth.validate_csrf_submission(request, request.headers.get('X-CSRF-Token') or payload.csrf_token)
+    catalog_slug = _allowed_catalog(user, payload.catalog_slug)
     cart = service.add_item(
         db,
         user_id=user.id,
@@ -99,6 +116,7 @@ def cart_add_item(
         size=payload.size,
         quantity=payload.quantity,
         expected_revision=payload.cart_revision,
+        catalog_slug=catalog_slug,
     )
     return JSONResponse({'ok': True, 'cart': cart})
 
@@ -112,13 +130,16 @@ def cart_update_item(
     db: Session = Depends(get_db),
 ):
     auth.validate_csrf_submission(request, request.headers.get('X-CSRF-Token') or payload.csrf_token)
+    catalog_slug = _allowed_catalog(user, payload.catalog_slug)
     cart = service.update_item(
         db,
         user_id=user.id,
         item_id=item_id,
         idempotency_key=payload.idempotency_key,
         quantity=payload.quantity,
+        ignore_quantity_step=payload.ignore_quantity_step and user.role in {'admin', 'developer'},
         expected_revision=payload.cart_revision,
+        catalog_slug=catalog_slug,
     )
     return JSONResponse({'ok': True, 'cart': cart})
 
@@ -132,11 +153,13 @@ def cart_remove_item(
     db: Session = Depends(get_db),
 ):
     auth.validate_csrf_submission(request, request.headers.get('X-CSRF-Token') or payload.csrf_token)
+    catalog_slug = _allowed_catalog(user, payload.catalog_slug)
     cart = service.remove_item(
         db,
         user_id=user.id,
         item_id=item_id,
         idempotency_key=payload.idempotency_key,
         expected_revision=payload.cart_revision,
+        catalog_slug=catalog_slug,
     )
     return JSONResponse({'ok': True, 'cart': cart})
